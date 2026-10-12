@@ -1,0 +1,33 @@
+# Gateway core: the single entry point for every LLM token and every tool call.
+#   kubectl apply -k gateway/deploy        (Terraform does it: modules/platform/gateway.tf)
+# Placeholders (Foundry resource name, Entra tenant, gateway audience) are
+# patched by the Terraform-generated overlay.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agentgateway-system
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: agentic-platform
+    includeSelectors: false
+
+resources:
+  - gateway.yaml
+  - backend-llm.yaml
+  - backend-mcp.yaml
+  - routes.yaml
+  - policies.yaml
+  - metrics.yaml
+  - web-search.yaml
+
+# Model price list, read by both Gateways (AgentgatewayParameters
+# spec.modelCatalog) to compute agentgateway_gen_ai_client_cost_usd_total.
+# USD per 1M tokens, keyed by provider "azure" then by deployment name (sent
+# upstream) and model name (returned by Foundry). JSON has no comments: the
+# sources and caveats are in monitoring/README.md.
+configMapGenerator:
+  - name: model-costs
+    files:
+      - catalog.json=model-costs.json
+generatorOptions:
+  disableNameSuffixHash: true   # referenced by name from AgentgatewayParameters

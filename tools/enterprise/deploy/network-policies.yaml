@@ -1,0 +1,76 @@
+# Ingress : seuls les pods de la gateway atteignent ces serveurs MCP.
+# Egress : DNS partout ; Grafana reste interne (namespace monitoring), Azure et
+# Graph sortent sur Internet 443 mais jamais vers le réseau interne (SSRF).
+# ---------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-grafana
+  namespace: outils-entreprise
+spec:
+  podSelector: { matchLabels: { app: mcp-grafana } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+          podSelector: { matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-proxy } }
+      ports: [{ port: 9000 }]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+      ports: [{ port: 80 }, { port: 3000 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-azure
+  namespace: outils-entreprise
+spec:
+  podSelector: { matchLabels: { app: mcp-azure } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+          podSelector: { matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-proxy } }
+      ports: [{ port: 9000 }]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports: [{ protocol: TCP, port: 443 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-graph
+  namespace: outils-entreprise
+spec:
+  podSelector: { matchLabels: { app: mcp-graph } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+          podSelector: { matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-proxy } }
+      ports: [{ port: 9000 }]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports: [{ protocol: TCP, port: 443 }]

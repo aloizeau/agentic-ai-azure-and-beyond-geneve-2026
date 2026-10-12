@@ -1,0 +1,27 @@
+# Étape 3 : la même politique, plus un plafond de jetons LLM par minute.
+# 400 pour la démo (la plateforme : 50 000). Au-delà : 429, la dépense s'arrête.
+# Limite locale = par route et par réplica du proxy ; un budget par équipe ou
+# par personne demande le rate limit global (service externe).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: protection-demo
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: demo-a
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-demo-ouverte }
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: __ISSUER__
+          audiences: [__AUDIENCE__]
+          jwks:
+            remote:
+              url: __JWKS__
+    rateLimit:
+      local:
+        - tokens: 400                  # jetons LLM (entrée + sortie) par minute
+          unit: Minutes

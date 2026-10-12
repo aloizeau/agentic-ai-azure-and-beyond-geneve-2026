@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------
+# Périmètre du pipeline « Agent Ready » de l'équipe IA (CEL, Kubernetes ≥ 1.30).
+# RBAC accorde des verbes sur des types ; cette politique borne OÙ. Le
+# périmètre, ce sont les objets marqués agentic.io/agent-ready=true — posé
+# par Agent Ready lui-même, vérifié AVANT et APRÈS chaque modification :
+#   - namespaces : agentic.io/agent-ready=true et agentic.io/team = leur nom,
+#     sur l'objet créé ET sur l'objet existant (pas de « réétiquetage » de
+#     kagent ou de agentgateway-system pour l'attirer dans le périmètre) ;
+#   - quotas, limites, RoleBindings, Secrets : dans un namespace Agent Ready ;
+#   - Secrets dans agentgateway-system : vk-*, labels agentic.io/virtual-key
+#     et agentic.io/agent-ready (les clés de la plateforme restent hors d'atteinte).
+# ---------------------------------------------------------------------------
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-ready-perimetre
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["namespaces", "secrets", "resourcequotas", "limitranges"]
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["rolebindings"]
+  matchConditions:
+    - name: pipeline-agent-ready
+      expression: request.userInfo.username == '${principal_id}'
+  variables:
+    # Objets à vérifier : le nouveau (CREATE, UPDATE) et l'existant (UPDATE, DELETE).
+    - name: objets
+      expression: >-
+        request.operation == 'CREATE' ? [object] :
+        (request.operation == 'DELETE' ? [oldObject] : [object, oldObject])
+    - name: equipe
+      expression: >-
+        request.resource.resource != 'namespaces' &&
+        has(namespaceObject.metadata.labels) &&
+        'agentic.io/agent-ready' in namespaceObject.metadata.labels &&
+        namespaceObject.metadata.labels['agentic.io/agent-ready'] == 'true'
+  validations:
+    - expression: >-
+        request.resource.resource != 'namespaces' ||
+        variables.objets.all(o, has(o.metadata.labels) &&
+          'agentic.io/agent-ready' in o.metadata.labels && o.metadata.labels['agentic.io/agent-ready'] == 'true' &&
+          'agentic.io/team' in o.metadata.labels && o.metadata.labels['agentic.io/team'] == o.metadata.name)
+      message: "namespace hors périmètre Agent Ready"
+    - expression: >-
+        request.resource.resource != 'secrets' || variables.equipe ||
+        (request.namespace == 'agentgateway-system' &&
+         variables.objets.all(o, o.metadata.name.startsWith('vk-') && has(o.metadata.labels) &&
+           'agentic.io/virtual-key' in o.metadata.labels && o.metadata.labels['agentic.io/virtual-key'] == 'true' &&
+           'agentic.io/agent-ready' in o.metadata.labels && o.metadata.labels['agentic.io/agent-ready'] == 'true'))
+      message: "Secret hors périmètre : namespace Agent Ready, ou clé virtuelle vk-<équipe> créée par Agent Ready"
+    - expression: >-
+        request.resource.resource in ['namespaces', 'secrets'] || variables.equipe
+      message: "quota, limites et RoleBinding : uniquement dans un namespace Agent Ready"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-ready-perimetre
+spec:
+  policyName: agent-ready-perimetre
+  validationActions: [Deny]

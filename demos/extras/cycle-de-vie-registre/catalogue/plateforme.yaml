@@ -1,0 +1,42 @@
+# What the platform team declares once in agentregistry (v0.4.0, ar.dev/v1alpha1).
+# Applied by run.sh, step 0. Validated against the agentregistry v0.4.0 schema.
+#
+# 1. Where a team may deploy: one Runtime per team namespace. The registry's
+#    Kubernetes runtime writes kagent/kmcp resources there, and only there
+#    (Helm value rbac.watchedNamespaces, modules/platform/registry.tf).
+# 2. What the platform already publishes: the MCP servers behind agentgateway.
+#    Catalogue entries only (discovery, documentation, ownership). They are
+#    not deployed from the registry: the gateway serves them and requires a
+#    user's Entra ID token (policy acces-llm).
+apiVersion: ar.dev/v1alpha1
+kind: Runtime
+metadata:
+  name: aks-equipe-produit
+spec:
+  type: Kubernetes
+  config:
+    namespace: equipe-produit
+---
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: plateforme-agents
+  tag: "1.0"
+spec:
+  title: Agents kagent (via la passerelle)
+  description: "list_agents, invoke_agent — tous les agents kagent du cluster, derrière agentgateway (/mcp). Jeton Entra ID requis."
+  remote:
+    type: streamable-http
+    url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp
+---
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: plateforme-recherche-web
+  tag: "1.0"
+spec:
+  title: Recherche web (via la passerelle)
+  description: "search, fetch_content — DuckDuckGo, publié par la plateforme derrière agentgateway (/mcp-web). Jeton Entra ID requis."
+  remote:
+    type: streamable-http
+    url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/mcp-web

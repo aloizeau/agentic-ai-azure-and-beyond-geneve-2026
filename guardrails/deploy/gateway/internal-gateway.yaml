@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+# Internal, UNGUARDED listener used only by the guardrail engine for its own
+# LLM calls (the "strict" profile's self-check rails).
+#
+# Why a separate Gateway rather than a route on the main one: the guardrail
+# policy is attached to the main route; if the engine called that route, every
+# check would trigger another check — an infinite loop. A dedicated Gateway
+# gets its own proxy Deployment (created by the agentgateway deployer), and a
+# NetworkPolicy (network-policies.yaml) lets only the adapter reach it.
+# Its traffic is still metered: guardrail tokens appear in Grafana like any
+# other LLM traffic, labelled with this gateway.
+# ---------------------------------------------------------------------------
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway-internal
+spec:
+  gatewayClassName: agentgateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8080
+      allowedRoutes:
+        namespaces: { from: Same }
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: llm-guardrails-internal
+spec:
+  ai:
+    provider:
+      # Validated against the agentgateway v1.5.0 CRD schema
+      # (resourceType enum: Foundry | OpenAI).
+      azure:
+        resourceName: fdy-REPLACE-ME          # terraform output foundry_account_name
+        resourceType: Foundry
+        projectName: proj-REPLACE-ME          # terraform output foundry_project_name
+        model: gpt-56-terra-eu                # DataZoneStandard deployment
+  policies:
+    auth:
+      azure:
+        workloadIdentity: {}                  # documented K8s form — no API key anywhere
+    ai:
+      routes:
+        "/v1/chat/completions": "Completions"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-guardrails-internal
+spec:
+  parentRefs:
+    - name: agentgateway-internal
+  rules:
+    - backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: llm-guardrails-internal

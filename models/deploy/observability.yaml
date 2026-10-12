@@ -1,0 +1,19 @@
+# vLLM metrics (queue depth, time to first token, KV-cache usage) — the GPU side
+# of the story. Token and cost metrics still come from agentgateway.
+# PodMonitor rather than ServiceMonitor: the Service KAITO creates carries no
+# labels to select on; the pods carry kaito.sh/workspace.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kaito-vllm
+  namespace: models
+  labels:
+    release: kps            # without this label the operator ignores the monitor
+spec:
+  selector:
+    matchExpressions:
+      - { key: kaito.sh/workspace, operator: Exists }
+  podMetricsEndpoints:
+    - portNumber: 5000
+      path: /metrics
+      interval: 15s

@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# This gateway is NOT exposed on the internet: ClusterIP only. LibreChat and
+# kagent reach it inside the cluster; for the live demos, kubectl port-forward.
+# Public exposure, when enabled, is a second Gateway: gateway/public.
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: internal-only
+spec:
+  service:
+    spec:
+      type: ClusterIP
+  # Workload Identity for the generated proxy pods: the `llm` backend calls
+  # Foundry with the managed identity federated to this ServiceAccount
+  # (system:serviceaccount:agentgateway-system:agentgateway-proxy).
+  # Terraform patches the client ID (modules/platform/gateway.tf).
+  serviceAccount:
+    metadata:
+      annotations:
+        azure.workload.identity/client-id: CLIENT-ID-REPLACE-ME
+  deployment:
+    spec:
+      template:
+        metadata:
+          labels:
+            azure.workload.identity/use: "true"
+  # Price list (ConfigMap model-costs, kustomization.yaml): each LLM response
+  # adds its cost to agentgateway_gen_ai_client_cost_usd_total.
+  modelCatalog:
+    sources:
+      - configMap: { name: model-costs }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway-proxy
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: internal-only
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces: { from: Same }

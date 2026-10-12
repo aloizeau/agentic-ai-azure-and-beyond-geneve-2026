@@ -1,0 +1,35 @@
+# NeMo Guardrails behind agentgateway — base (library mode, Apache-2.0 only).
+#   kubectl apply -k guardrails/deploy
+# Enterprise variant (NVIDIA NIM Operator NemoGuardrail CR):
+#   kubectl apply -k guardrails/overlays/nvidia-microservice
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: agentgateway-system
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: agentic-platform
+    includeSelectors: false
+
+resources:
+  - base/adapter.yaml
+  - base/observability.yaml
+  - base/network-policies.yaml
+  - gateway/internal-gateway.yaml
+  - gateway/guardrail-policies.yaml
+
+# Rail profiles become ConfigMaps. The content hash in the generated name makes
+# every rule change roll the adapter: GitOps, no hot-reload code to trust.
+configMapGenerator:
+  - name: guardrail-rails-default
+    files:
+      - config.yml=rails/default/config.yml
+  - name: guardrail-rails-strict
+    files:
+      - config.yml=rails/strict/config.yml
+      - prompts.yml=rails/strict/prompts.yml
+
+images:
+  - name: nemo-guardrail-adapter
+    newName: ghcr.io/OWNER/nemo-guardrail-adapter   # set by CI / kustomize edit set image
+    newTag: 0.1.0

@@ -1,0 +1,32 @@
+
+# Guardrails: Foundry content filters run in production today; NeMo Guardrails
+# behind the gateway is the R&D target. Turn it on once the adapter image is
+# built (guardrail-adapter workflow): the webhook is fail-closed.
+enable_nemo_guardrails  = false
+guardrail_adapter_image = "ghcr.io/<owner>/nemo-guardrail-adapter:0.1.0"
+
+# Self-hosted model on AKS (KAITO add-on): off by default, needs GPU quota
+# (StandardNVADSA10v5Family, 36 vCPU) and costs ~4.16 $/hour while running.
+enable_self_hosted_models     = false
+self_hosted_gpu_instance_type = "Standard_NV36ads_A10_v5"
+
+# Enterprise MCP tools (tools/enterprise): off by default. On => Grafana, Azure
+# and Microsoft Graph as self-hosted MCP servers behind the gateway (credentials
+# via tools/enterprise/run.sh), plus GitHub (per-user OAuth) and Microsoft Learn
+# (no auth) as direct LibreChat MCP servers.
+enable_enterprise_tools = false
+
+# Usage dashboard (Grafana, folder "Plateforme IA"): tokens, cost and tools per
+# user. Per-user labels are fine for a demo; for thousands of users set false.
+usage_metrics_per_user = true
+
+# Public exposure (optional): LibreChat, Grafana, kagent UI and the LLM API on
+# https://demos.<zone> and https://*.demos.<zone>, Let's Encrypt certificates,
+# Entra ID sign-in in front of Grafana and kagent. Needs CLOUDFLARE_API_TOKEN
+# (Zone:Read + DNS:Edit on the zone) in the environment of terraform.
+# public_exposure = {
+#   zone       = "shift-cloud.io"
+#   subdomain  = "demos"
+#   acme_email = "you@example.com"   # optional, Let's Encrypt contact
+#   expose_api = true                # api.demos.<zone>: /v1 and /agents/v1
+# }

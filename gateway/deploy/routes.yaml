@@ -1,0 +1,95 @@
+# Two doors onto the same backend:
+#   /v1         people, through LibreChat — Entra ID access token (per user)
+#   /agents/v1  agents (kagent) — one virtual key per team, stored as Secrets
+# and routes for tools:
+#   /mcp          MCP servers (kagent agents) for people, same Entra ID token
+#   /mcp-equipes  MCP servers published by the teams (discovered by label)
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /v1 }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: llm
+      timeouts:
+        request: 120s
+---
+# MCP tools for people (LibreChat): same Entra ID token as /v1 (policy acces-llm).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mcp }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: mcp
+      timeouts:
+        request: 300s   # invoke_agent waits for the agent's whole answer
+---
+# Recherche web (DuckDuckGo) for people (LibreChat): same Entra ID token as
+# /mcp (policy acces-llm), its own backend so it is a distinct MCP server.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-web
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mcp-web }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: mcp-web
+      timeouts:
+        request: 60s    # fetch_content d'une page peut être lent
+---
+# Outils publiés par les équipes (démo B) : même jeton Entra ID que /mcp
+# (politique acces-llm), un backend découvert par label (backend-mcp.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-equipes
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /mcp-equipes }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: mcp-equipes
+      timeouts:
+        request: 60s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-agents
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /agents/v1 }
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: llm
+      timeouts:
+        request: 120s

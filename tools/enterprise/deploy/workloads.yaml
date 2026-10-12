@@ -1,0 +1,164 @@
+# Serveurs MCP d'entreprise auto-hébergés, atteints uniquement par la gateway.
+# Chacun sert en streamable-http sur :9000 (chemin /mcp). Secrets créés hors
+# dépôt par run.sh. Les images/flags marqués « VÉRIFIER » sont à confirmer et
+# épingler (digest) à la répétition D-7 — même exigence que jira/duckduckgo.
+# ---------------------------------------------------------------------------
+# Grafana — « visualiser mes propres dashboards / métriques » depuis le chat.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-grafana
+  namespace: outils-entreprise
+  labels: { app: mcp-grafana }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mcp-grafana } }
+  template:
+    metadata:
+      labels: { app: mcp-grafana }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: mcp
+          image: mcp/grafana:latest          # VÉRIFIER (registre/tag), puis épingler un digest
+          args: ["-t", "streamable-http", "-address", "0.0.0.0:9000"]
+          envFrom:
+            - secretRef: { name: grafana-mcp-credentials }   # GRAFANA_URL, GRAFANA_API_KEY
+          ports: [{ containerPort: 9000 }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe:
+            tcpSocket: { port: 9000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-grafana
+  namespace: outils-entreprise
+  labels: { app: mcp-grafana }
+spec:
+  selector: { app: mcp-grafana }
+  ports: [{ port: 9000, targetPort: 9000 }]
+---
+# Azure — « visualiser mes ressources Azure » (Resource Graph, AKS, coûts).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-azure
+  namespace: outils-entreprise
+  labels: { app: mcp-azure }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mcp-azure } }
+  template:
+    metadata:
+      labels: { app: mcp-azure }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: mcp
+          image: node:22-bookworm-slim       # VÉRIFIER, puis épingler un digest
+          command: ["npx"]
+          # VÉRIFIER le nom exact du transport/port d'@azure/mcp (server start).
+          args: ["-y", "@azure/mcp@latest", "server", "start", "--transport", "streamable-http", "--port", "9000"]
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: npm_config_cache, value: /tmp/.npm }
+          envFrom:
+            - secretRef: { name: azure-mcp-credentials }     # AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET (préférer Workload Identity)
+          ports: [{ containerPort: 9000 }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe:
+            tcpSocket: { port: 9000 }
+            initialDelaySeconds: 15            # npx installe le paquet au 1er démarrage
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-azure
+  namespace: outils-entreprise
+  labels: { app: mcp-azure }
+spec:
+  selector: { app: mcp-azure }
+  ports: [{ port: 9000, targetPort: 9000 }]
+---
+# Microsoft Graph / M365 — « visualiser SharePoint / OneDrive / Teams ».
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-graph
+  namespace: outils-entreprise
+  labels: { app: mcp-graph }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mcp-graph } }
+  template:
+    metadata:
+      labels: { app: mcp-graph }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: mcp
+          image: node:22-bookworm-slim       # VÉRIFIER, puis épingler un digest
+          command: ["npx"]
+          # VÉRIFIER le flag http/port de @softeria/ms-365-mcp-server.
+          args: ["-y", "@softeria/ms-365-mcp-server", "--http", "9000"]
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: npm_config_cache, value: /tmp/.npm }
+          envFrom:
+            - secretRef: { name: graph-mcp-credentials }     # MS365_MCP_CLIENT_ID / TENANT_ID / CLIENT_SECRET (app Entra + consentement admin)
+          ports: [{ containerPort: 9000 }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe:
+            tcpSocket: { port: 9000 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-graph
+  namespace: outils-entreprise
+  labels: { app: mcp-graph }
+spec:
+  selector: { app: mcp-graph }
+  ports: [{ port: 9000, targetPort: 9000 }]

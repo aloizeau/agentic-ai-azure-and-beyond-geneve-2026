@@ -1,0 +1,41 @@
+# Profile "strict" — "default" + semantic LLM self-checks (jailbreak, policy).
+# The self-check model is called through the INTERNAL agentgateway listener,
+# which has no guardrail policy attached (otherwise: infinite loop) but is
+# still metered, so the cost of guardrails shows up in Grafana.
+models:
+  - type: main
+    engine: openai
+    model: gpt-56-terra-eu           # Foundry deployment name (DataZoneStandard)
+    parameters:
+      base_url: http://agentgateway-internal.agentgateway-system.svc.cluster.local:8080/v1
+      api_key: unused                # the gateway authenticates to Foundry (workload identity)
+      temperature: 0
+
+rails:
+  config:
+    regex_detection:
+      input:
+        patterns:
+          - '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b'
+          - '\bAKIA[0-9A-Z]{16}\b'
+          - '\bgh[pousr]_[A-Za-z0-9]{36,}\b'
+          - '(?i)\b(?:api[_-]?key|secret|password|mot de passe)\s*[:=]\s*\S{12,}'
+          - '\b(?:\d[ -]?){13,16}\b'
+          - '\bFR\d{2}(?: ?\d{4}){5}(?: ?\d{3})\b'
+          - '\b[12] ?\d{2} ?(?:0[1-9]|1[0-2]) ?(?:\d{2}|2[AB]) ?\d{3} ?\d{3} ?\d{2}\b'
+      output:
+        patterns:
+          - '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b'
+          - '-----BEGIN (?:RSA |EC )?PRIVATE KEY-----'
+    injection_detection:
+      injections: [code, sqli, template, xss]
+      action: reject
+  input:
+    flows:
+      - regex check input        # cheap checks first: no LLM call if they block
+      - self check input
+  output:
+    flows:
+      - regex check output
+      - injection detection
+      - self check output

@@ -1,0 +1,19 @@
+# Les outils d'entreprise publiés par la plateforme — Azure MCP Server et
+# Microsoft Learn — atteints PAR LA PASSERELLE, avec la clé virtuelle de
+# l'équipe : chaque appel est authentifié, filtré par équipe et compté.
+# Aucune identité Azure, aucune URL externe dans le namespace de l'équipe.
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: outils-entreprise
+spec:
+  description: Azure (lecture seule) et Microsoft Learn, via la passerelle (clé de l'équipe __EQUIPE__)
+  url: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agents/mcp-entreprise
+  protocol: STREAMABLE_HTTP
+  timeout: 60s
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: gateway-key       # créé par Agent Ready
+        key: authorization      # « Bearer sk-__EQUIPE__-… »

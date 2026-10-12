@@ -1,0 +1,28 @@
+# The agent itself stays a kagent declarative Agent: the team writes this and
+# nothing else. Its building blocks come from the catalogue:
+#   - tools:  the MCPServer the registry deployed (jira-mcp-tickets)
+#   - prompt: a ConfigMap written by run.sh from Prompt assistant-tickets@<tag>
+#   - model:  the gateway, never a provider (ModelConfig passerelle-llm, Chalet self-service demo)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: assistant-tickets
+  namespace: equipe-produit
+  labels:
+    agentic.io/source: agentregistry
+spec:
+  description: Trie les tickets Jira de l'équipe (outils et prompt issus du catalogue)
+  type: Declarative
+  declarative:
+    modelConfig: passerelle-llm
+    systemMessageFrom:
+      type: ConfigMap
+      name: prompt-assistant-tickets
+      key: prompt
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: MCPServer
+          name: jira-mcp-tickets
+          toolNames: [jira_search, jira_get_issue]

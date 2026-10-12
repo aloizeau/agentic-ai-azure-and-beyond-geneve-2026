@@ -1,0 +1,8 @@
+# Ce que l'équipe IA publie pour la démo D (appliqué par prepare.ps1, après
+# remplacement des marqueurs __X__ dans une copie temporaire).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - azure-mcp.yaml
+  - passerelle-agents.yaml

@@ -1,0 +1,14 @@
+# Le modèle de l'équipe : la PASSERELLE, jamais un fournisseur.
+# gateway-key a été créée par « Agent Ready » (clé virtuelle de l'équipe).
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: passerelle-llm
+  namespace: __EQUIPE__
+spec:
+  provider: OpenAI
+  model: llm                       # ignoré : la passerelle choisit le déploiement
+  apiKeySecret: gateway-key
+  apiKeySecretKey: key
+  openAI:
+    baseUrl: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agents/v1

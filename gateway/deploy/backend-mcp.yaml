@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------
+# MCP through the gateway: LibreChat no longer calls the kagent MCP server
+# directly, it goes through /mcp with the user's Entra ID token. The gateway
+# then knows who called which tool, and counts it:
+#   agentgateway_mcp_requests_total{method, server, resource (tool), user, team}
+# One target today: the kagent controller (tools list_agents, invoke_agent).
+# A team's MCP server published by the platform is one more target here
+# (static host, or a Service selector); its tools then show up in the same
+# dashboard (monitoring/).
+# Validated against the agentgateway v1.5.0 CRD schema.
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: mcp
+spec:
+  mcp:
+    targets:
+      - name: agents
+        static:
+          host: kagent-controller.kagent.svc.cluster.local
+          port: 8083
+          path: /mcp
+          protocol: StreamableHTTP
+---
+# Recherche web (DuckDuckGo, web-search.yaml) : un serveur MCP publié par la
+# plateforme, sur son propre backend pour qu'il apparaisse comme un serveur
+# distinct « Recherche web » dans LibreChat (route /mcp-web). Ses outils
+# (search, fetch_content, expand_link) sont comptés sous server="web-search".
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: mcp-web
+spec:
+  mcp:
+    targets:
+      - name: web-search
+        static:
+          host: web-search-mcp.agentgateway-system.svc.cluster.local
+          port: 9000
+          path: /mcp
+          protocol: StreamableHTTP
+---
+# Outils des équipes : chaque serveur MCP qu'une équipe publie s'enregistre
+# tout seul. Pas de ticket, pas de modification de la plateforme : le Service
+# de l'équipe porte le label agentic.io/publier-mcp=true, un port
+# appProtocol agentgateway.dev/mcp et l'annotation agentgateway.dev/mcp-path ;
+# la passerelle le découvre dans tout namespace d'équipe (label agentic.io/team).
+# Le nom de cible (annotation agentgateway.dev/mcp-target-name) préfixe ses
+# outils et apparaît dans le tableau de bord (server="<cible>").
+# Résolution : controller/pkg/syncer/backend/mcp.go (agentgateway v1.5.0).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: mcp-equipes
+spec:
+  mcp:
+    prefixMode: Always   # docs-equipe-docs_rechercher : on voit quelle équipe sert l'outil
+    failureMode: FailOpen   # le serveur en panne d'UNE équipe ne coupe pas les outils des autres
+    targets:
+      - name: equipes
+        selector:
+          namespaces:
+            matchExpressions:
+              - { key: agentic.io/team, operator: Exists }
+          services:
+            matchLabels:
+              agentic.io/publier-mcp: "true"

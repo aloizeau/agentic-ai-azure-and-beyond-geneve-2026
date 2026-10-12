@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------------------
+# One backend, groups in priority order (démo bascule).
+#   group 0: gpt-5.6-terra, DataZoneStandard — balanced daily production
+#   group 1: gpt-5.6-luna, DataZoneStandard — fast economical fallback
+#   Both groups keep EU-only processing. Sol is deployed separately for
+#   explicitly routed frontier workloads.
+#   Bedrock, OVHcloud…: one more group here, nothing changes for the agents.
+# The requested model name is ignored: each provider pins its deployment.
+# Keyless: Workload Identity (Cognitive Services User on the Foundry account).
+# Validated against the agentgateway v1.5.0 CRD schema.
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: llm
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: foundry-terra
+            azure:
+              resourceName: fdy-REPLACE-ME      # terraform output foundry_account_name
+              resourceType: Foundry
+              projectName: proj-REPLACE-ME      # terraform output foundry_project_name
+              model: gpt-56-terra-eu
+      - providers:
+          - name: foundry-luna
+            azure:
+              resourceName: fdy-REPLACE-ME
+              resourceType: Foundry
+              projectName: proj-REPLACE-ME      # terraform output foundry_project_name
+              model: gpt-56-luna-eu
+  policies:
+    auth:
+      azure:
+        workloadIdentity: {}
+    ai:
+      routes:
+        "/v1/chat/completions": "Completions"

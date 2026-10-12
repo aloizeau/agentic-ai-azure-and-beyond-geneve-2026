@@ -1,0 +1,24 @@
+# Jira as an MCP server, deployed by kmcp (MCPServer CRD).
+# Image: sooperset/mcp-atlassian (MIT), read-only, two tools only.
+# Credentials: Secret jira-credentials (JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN),
+# injected as environment variables — created by run.sh, never committed.
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: jira-mcp
+  namespace: equipe-produit
+spec:
+  transportType: http
+  httpTransport:
+    targetPort: 9000
+    path: /mcp
+  deployment:
+    image: ghcr.io/sooperset/mcp-atlassian:0.23.1
+    port: 9000
+    cmd: mcp-atlassian
+    args: ["--transport", "streamable-http", "--host", "0.0.0.0", "--port", "9000"]
+    env:
+      READ_ONLY_MODE: "true"
+      ENABLED_TOOLS: "jira_search,jira_get_issue"
+    secretRefs:
+      - name: jira-credentials

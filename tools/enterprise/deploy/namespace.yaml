@@ -1,0 +1,6 @@
+# Outils d'entreprise auto-hébergés (OPTION enable_enterprise_tools).
+# Namespace dédié : leur propre NetworkPolicy et leur propre cycle de vie.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: outils-entreprise

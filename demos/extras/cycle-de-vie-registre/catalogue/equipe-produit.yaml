@@ -1,0 +1,48 @@
+# What the product team publishes in agentregistry — version 1.
+# Applied live by run.sh (step 1). Validated against the agentregistry v0.4.0 schema.
+#
+# The Jira MCP server is the same as in the Chalet self-service demo (sooperset/mcp-atlassian, MIT,
+# read-only, two tools), but now it is a versioned catalogue entry: anyone can
+# find it, see who published it and deploy the exact same version.
+apiVersion: ar.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: jira-mcp
+  tag: 1.0.0
+spec:
+  title: Jira (lecture seule)
+  description: "jira_search, jira_get_issue — publié par l'équipe produit. Identifiants Jira fournis au déploiement (Secret jira-credentials), jamais dans le catalogue."
+  source:
+    package:
+      origin:
+        type: oci
+        identifier: ghcr.io/sooperset/mcp-atlassian:0.23.1
+        oci:
+          serverName: jira-mcp
+      launch:
+        command: mcp-atlassian
+        args:
+          - { type: positional, value: --transport }
+          - { type: positional, value: streamable-http }
+          - { type: positional, value: --host }
+          - { type: positional, value: 0.0.0.0 }
+          - { type: positional, value: --port }
+          - { type: positional, value: "9000" }
+        env:
+          - { name: READ_ONLY_MODE, value: "true" }
+          - { name: ENABLED_TOOLS, value: "jira_search,jira_get_issue" }
+      transport:
+        type: http
+        port: 9000
+        path: /mcp
+---
+apiVersion: ar.dev/v1alpha1
+kind: Prompt
+metadata:
+  name: assistant-tickets
+  tag: v1
+spec:
+  description: "Prompt système de l'agent assistant-tickets — version 1"
+  content: |
+    Tu aides l'équipe produit à trier ses tickets Jira.
+    Réponds en français, en citant les clés des tickets.

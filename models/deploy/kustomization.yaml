@@ -1,0 +1,19 @@
+# Self-hosted model on AKS (KAITO add-on) behind agentgateway.
+#   kubectl apply -k models/deploy
+# Requires: AKS with the AI toolchain operator add-on (ai_toolchain_operator_enabled)
+# and GPU quota for the instanceType family in the cluster's region.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: agentic-platform
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - workspace-phi-4-mini.yaml
+  - network-policy.yaml
+  - observability.yaml
+  - gateway.yaml
+  - policies.yaml

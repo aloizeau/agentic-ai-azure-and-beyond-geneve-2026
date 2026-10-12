@@ -1,0 +1,9 @@
+# Les outils de l'agent : le serveur MCP de l'équipe, en direct dans le cluster.
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: docs-mcp
+spec:
+  description: Documents Markdown de l'équipe __EQUIPE__ (stockage __STORAGE__)
+  url: http://docs-mcp.__EQUIPE__.svc.cluster.local:8080/mcp
+  protocol: STREAMABLE_HTTP

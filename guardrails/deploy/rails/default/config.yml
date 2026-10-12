@@ -1,0 +1,34 @@
+# Profile "default" — deterministic rails only: no LLM call, sub-10 ms, CPU.
+# Same file works with the NeMo Guardrails library AND the NVIDIA microservice
+# (NVIDIA: "Configurations are portable between the library and microservice").
+rails:
+  config:
+    regex_detection:
+      input:
+        patterns:
+          # Secrets pasted into prompts — the 60 000 € weekend started with a key.
+          - '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b'        # OpenAI-style keys
+          - '\bAKIA[0-9A-Z]{16}\b'                         # AWS access key id
+          - '\bgh[pousr]_[A-Za-z0-9]{36,}\b'               # GitHub tokens
+          - '(?i)\b(?:api[_-]?key|secret|password|mot de passe)\s*[:=]\s*\S{12,}'
+          # Personal data
+          - '\b(?:\d[ -]?){13,16}\b'                        # payment card numbers
+          - '\bFR\d{2}(?: ?\d{4}){5}(?: ?\d{3})\b'         # French IBAN
+          - '\b[12] ?\d{2} ?(?:0[1-9]|1[0-2]) ?(?:\d{2}|2[AB]) ?\d{3} ?\d{3} ?\d{2}\b'  # French NIR
+      output:
+        patterns:
+          - '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b'
+          - '\bAKIA[0-9A-Z]{16}\b'
+          - '-----BEGIN (?:RSA |EC )?PRIVATE KEY-----'
+    injection_detection:
+      # YARA rules shipped with NeMo Guardrails. Checks what the model returns,
+      # which matters when an agent's output becomes a tool input.
+      injections: [code, sqli, template, xss]
+      action: reject
+  input:
+    flows:
+      - regex check input
+  output:
+    flows:
+      - regex check output
+      - injection detection

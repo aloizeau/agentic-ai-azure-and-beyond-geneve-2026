@@ -1,0 +1,129 @@
+# ---------------------------------------------------------------------------
+# Azure MCP Server (Microsoft), publié par l'équipe IA pour les agents.
+#   - image officielle mcr.microsoft.com/azure-sdk/azure-mcp, transport HTTP ;
+#   - LECTURE SEULE (--read-only) et quatre domaines seulement (--namespace) ;
+#   - identité managée fédérée (Workload Identity) : rôle Reader, rien d'autre,
+#     posé par prepare.ps1 — aucun secret de principal de service ;
+#   - joignable uniquement par la passerelle (NetworkPolicy) : c'est elle qui
+#     authentifie (clé d'équipe), filtre les outils par équipe et compte.
+# Pourquoi --dangerously-disable-http-incoming-auth : l'authentification Entra
+# du serveur attend un jeton émis pour SA propre application ; ici l'appelant
+# est la passerelle. La NetworkPolicy ci-dessous est la condition de ce choix.
+# Limite assumée : tous les agents voient Azure avec la même identité (Reader).
+# Étape suivante documentée par Microsoft : --outgoing-auth-strategy UseOnBehalfOf.
+# Marqués VÉRIFIER : à confirmer et épingler (digest) à la répétition D-7.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: azure-mcp
+  namespace: outils-entreprise
+  annotations:
+    azure.workload.identity/client-id: __AZURE_MCP_CLIENT_ID__
+    azure.workload.identity/tenant-id: __TENANT_ID__
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-mcp
+  namespace: outils-entreprise
+  labels: { app: azure-mcp }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: azure-mcp } }
+  template:
+    metadata:
+      labels:
+        app: azure-mcp
+        azure.workload.identity/use: "true"   # le webhook projette le jeton fédéré
+    spec:
+      serviceAccountName: azure-mcp
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000                       # VÉRIFIER : utilisateur de l'image
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: azure-mcp
+          image: mcr.microsoft.com/azure-sdk/azure-mcp:latest   # VÉRIFIER, puis épingler un digest
+          # Ne pas surcharger « command » : l'image démarre déjà « server start ».
+          args:
+            - --transport
+            - http
+            - --outgoing-auth-strategy
+            - UseHostingEnvironmentIdentity
+            - --dangerously-disable-http-incoming-auth   # voir l'en-tête : NetworkPolicy obligatoire
+            - --read-only
+            - --mode
+            - namespace
+            - --namespace
+            - aks
+            - --namespace
+            - group
+            - --namespace
+            - monitor
+            - --namespace
+            - resourcehealth                           # VÉRIFIER les noms de domaines (azmcp --help)
+          env:
+            - { name: ASPNETCORE_URLS, value: "http://+:8080" }
+            - { name: ASPNETCORE_ENVIRONMENT, value: Production }
+            - { name: AZURE_TOKEN_CREDENTIALS, value: WorkloadIdentityCredential }   # VÉRIFIER
+            - { name: AZURE_MCP_INCLUDE_PRODUCTION_CREDENTIALS, value: "true" }
+            - { name: AZURE_MCP_DANGEROUSLY_DISABLE_HTTPS_REDIRECTION, value: "true" } # HTTP dans le cluster
+            - { name: AZURE_MCP_COLLECT_TELEMETRY, value: "false" }
+            - { name: AZURE_SUBSCRIPTION_ID, value: __SUBSCRIPTION_ID__ }
+            - { name: HOME, value: /tmp }
+          ports:
+            - { name: mcp, containerPort: 8080 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            tcpSocket: { port: mcp }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: azure-mcp
+  namespace: outils-entreprise
+  labels: { app: azure-mcp }
+spec:
+  selector: { app: azure-mcp }
+  ports:
+    - { name: mcp, port: 8080, targetPort: mcp }
+---
+# Entrée : les proxys de la passerelle, rien d'autre (ni les agents, ni les
+# équipes, ni LibreChat). Sortie : DNS et HTTPS public (ARM, Entra ID), jamais
+# le réseau interne.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: azure-mcp
+  namespace: outils-entreprise
+spec:
+  podSelector: { matchLabels: { app: azure-mcp } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: agentgateway-system } }
+          podSelector: { matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-proxy } }
+      ports: [{ port: 8080 }]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports: [{ protocol: TCP, port: 443 }]

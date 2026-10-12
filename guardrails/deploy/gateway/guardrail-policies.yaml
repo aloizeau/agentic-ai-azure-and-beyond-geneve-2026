@@ -1,0 +1,96 @@
+# ---------------------------------------------------------------------------
+# Two layers, one policy object per route.
+#
+#   Layer 1 — native agentgateway guard (regex): microseconds, no dependency.
+#   Layer 2 — webhook to the NeMo Guardrails adapter: semantic + YARA rails.
+#
+# The rules are the same whichever model provider the route ends up on
+# (Foundry, Bedrock, OVHcloud…): they live at the gateway, not at the provider.
+# ---------------------------------------------------------------------------
+#
+# Same NAME as the regex-only policy of gateway/deploy/policies.yaml: when NeMo
+# is enabled, Terraform drops that one and this object takes its place, so one
+# policy object carries the content rules of every LLM route.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: garde-fous-llm
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm }          # people (LibreChat)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-agents }   # agents (kagent)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-aks }          # self-hosted model (optional):
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-aks-agents }   # no Foundry filter there
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-public }         # public exposure (optional)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-agents-public }  # gateway/public
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - regex:
+              action: Reject
+              builtins: [CreditCard]
+            response:
+              message: "Requête bloquée : donnée de carte bancaire détectée."
+          - webhook:
+              backendRef:
+                kind: Service
+                name: guardrail-adapter
+                port: 8080
+              failureMode: FailClosed         # adapter unreachable => reject (documented default)
+              headers:
+                x-guardrail-profile: '"default"'   # CEL string literal: rail profile for this route
+                x-user: jwt.sub                    # identity for the adapter's logs
+                x-model: llmRequest.model
+        response:
+          - webhook:
+              backendRef:
+                kind: Service
+                name: guardrail-adapter
+                port: 8080
+              failureMode: FailClosed
+              headers:
+                x-guardrail-profile: '"default"'
+---
+# A stricter profile for a route exposed to broader audiences (e.g. the
+# company-wide assistant): same adapter, "strict" rails incl. LLM self-checks.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: guardrails-strict
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm-assistant-groupe
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - webhook:
+              backendRef: { kind: Service, name: guardrail-adapter, port: 8080 }
+              failureMode: FailClosed
+              headers:
+                x-guardrail-profile: '"strict"'
+                x-user: jwt.sub
+        response:
+          - webhook:
+              backendRef: { kind: Service, name: guardrail-adapter, port: 8080 }
+              failureMode: FailClosed
+              headers:
+                x-guardrail-profile: '"strict"'
+---
+# The webhook has no deadline of its own: without this, a slow engine stalls
+# every LLM call. On expiry the webhook counts as unavailable => failureMode.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: guardrail-adapter-timeout
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: guardrail-adapter
+  backend:
+    http:
+      requestTimeout: 3s

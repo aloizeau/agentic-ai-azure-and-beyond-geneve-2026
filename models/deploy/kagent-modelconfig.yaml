@@ -1,0 +1,15 @@
+# Example, not applied: the platform's agents (kagent namespace) switching to
+# the in-cluster model. Still the gateway, never vLLM directly: /agents/aks/v1
+# with the "platform" virtual key that Terraform puts in kagent/gateway-key.
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: passerelle-llm-aks
+  namespace: kagent
+spec:
+  provider: OpenAI
+  model: phi-4-mini-instruct
+  apiKeySecret: gateway-key
+  apiKeySecretKey: key
+  openAI:
+    baseUrl: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agents/aks/v1

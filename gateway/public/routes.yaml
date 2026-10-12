@@ -1,0 +1,106 @@
+# Public routes. Each lives in the namespace of what it serves; the listeners
+# only accept namespaces labelled agentic.io/public=true (set by Terraform).
+# Host names are patched by Terraform.
+---
+# HTTP -> HTTPS for every host. ACME challenge routes are more specific
+# (host + exact path) and win over this one.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https-redirect
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - { name: agentgateway-public, sectionName: http }
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect: { scheme: https, statusCode: 301 }
+---
+# LibreChat: Entra ID sign-in is LibreChat's own (OIDC code flow).
+# The gateway terminates TLS and speaks plain HTTP to the pod. Without this
+# header LibreChat sees req.secure=false and express-session drops its Secure
+# session cookie, so the OIDC state never persists and the Entra callback fails
+# with "Unable to verify authorization request state" (trust proxy=1 reads it).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: librechat-public
+  namespace: librechat
+spec:
+  parentRefs:
+    - { name: agentgateway-public, namespace: agentgateway-system, sectionName: https-chat }
+  hostnames: [CHAT-HOST-REPLACE-ME]
+  rules:
+    - filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-Proto
+                value: https
+      backendRefs:
+        - { name: librechat, port: 3080 }
+---
+# Grafana: only through oauth2-proxy (Entra ID). Grafana itself is not routed.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana-public
+  namespace: monitoring
+spec:
+  parentRefs:
+    - { name: agentgateway-public, namespace: agentgateway-system, sectionName: https-grafana }
+  hostnames: [GRAFANA-HOST-REPLACE-ME]
+  rules:
+    - backendRefs:
+        - { name: oauth2-proxy-grafana, port: 4180 }
+---
+# kagent UI: only through the oauth2-proxy bundled with the kagent chart.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kagent-public
+  namespace: kagent
+spec:
+  parentRefs:
+    - { name: agentgateway-public, namespace: agentgateway-system, sectionName: https-kagent }
+  hostnames: [KAGENT-HOST-REPLACE-ME]
+  rules:
+    - backendRefs:
+        - { name: kagent-oauth2-proxy, port: 4180 }
+---
+# LLM API, same backend and same policies as inside the cluster
+# (gateway/deploy/policies.yaml targets llm-public and llm-agents-public).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-public
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - { name: agentgateway-public, sectionName: https-api }
+  hostnames: [API-HOST-REPLACE-ME]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /v1 }
+      backendRefs:
+        - { group: agentgateway.dev, kind: AgentgatewayBackend, name: llm }
+      timeouts:
+        request: 120s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-agents-public
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - { name: agentgateway-public, sectionName: https-api }
+  hostnames: [API-HOST-REPLACE-ME]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /agents/v1 }
+      backendRefs:
+        - { group: agentgateway.dev, kind: AgentgatewayBackend, name: llm }
+      timeouts:
+        request: 120s

@@ -1,0 +1,22 @@
+# Deploy jira-mcp 1.0.0 from the catalogue into the team namespace.
+# The registry's Kubernetes runtime turns this into a kmcp MCPServer named
+# "<server>-<deployment>" = jira-mcp-tickets in equipe-produit, labelled as
+# managed by agentregistry. Deleting the Deployment deletes it.
+# Validated against the agentregistry v0.4.0 schema.
+apiVersion: ar.dev/v1alpha1
+kind: Deployment
+metadata:
+  name: tickets
+spec:
+  targetRef:
+    kind: MCPServer
+    name: jira-mcp
+    tag: 1.0.0
+  runtimeRef:
+    kind: Runtime
+    name: aks-equipe-produit
+  # Credentials stay in the cluster: a Secret in the team namespace, created
+  # by run.sh from JIRA_* variables. The catalogue never sees them.
+  envFrom:
+    - secretRef:
+        name: jira-credentials

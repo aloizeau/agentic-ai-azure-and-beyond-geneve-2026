@@ -1,0 +1,24 @@
+# Ce que l'équipe écrit — et tout ce qu'elle écrit pour son agent.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: assistant-docs
+  namespace: __EQUIPE__
+spec:
+  description: Répond aux questions de l'équipe __EQUIPE__ à partir de ses documents
+  type: Declarative
+  declarative:
+    modelConfig: passerelle-llm   # jamais un fournisseur
+    systemMessage: |
+      Tu es l'assistant documentaire de l'équipe __EQUIPE__.
+      Réponds en français, uniquement à partir des documents de l'équipe :
+      cherche d'abord avec « rechercher », lis le document avec « lire_document »
+      si besoin, et cite toujours le nom du document source.
+      Si la réponse n'est dans aucun document, dis-le simplement.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: docs-mcp
+          toolNames: [lister_documents, lire_document, rechercher]

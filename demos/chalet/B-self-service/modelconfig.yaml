@@ -1,0 +1,14 @@
+# The team's model configuration: the GATEWAY, never a provider.
+# gateway-key is created by Terraform when the team is onboarded (var.teams).
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: passerelle-llm
+  namespace: equipe-produit
+spec:
+  provider: OpenAI
+  model: llm                       # ignored: the gateway pins the deployment
+  apiKeySecret: gateway-key
+  apiKeySecretKey: key
+  openAI:
+    baseUrl: http://agentgateway-proxy.agentgateway-system.svc.cluster.local/agents/v1

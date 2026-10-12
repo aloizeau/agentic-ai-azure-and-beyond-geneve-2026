@@ -1,0 +1,41 @@
+# Only gateway proxies may call the adapter; only the adapter may call the
+# internal (unguarded) gateway listener. Enforced by Cilium on the PoC cluster.
+#
+# ⚠️ Assumes the agentgateway deployer labels proxy pods with
+# gateway.networking.k8s.io/gateway-name (the Gateway API recommended label).
+# Check with: kubectl get pods -n agentgateway-system --show-labels
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: guardrail-adapter-ingress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: guardrail-adapter }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: gateway.networking.k8s.io/gateway-name, operator: In, values: [agentgateway-proxy] }
+      ports: [{ port: 8080 }]
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports: [{ port: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: internal-gateway-ingress
+spec:
+  podSelector:
+    matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-internal }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: guardrail-adapter }
+      ports: [{ port: 8080 }]
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }

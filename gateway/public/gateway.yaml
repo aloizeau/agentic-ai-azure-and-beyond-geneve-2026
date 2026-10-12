@@ -1,0 +1,118 @@
+# ---------------------------------------------------------------------------
+# Public door — a second Gateway, same agentgateway, same policies.
+#   Service LoadBalancer on the static public IP created by Terraform
+#   HTTPS listeners, one per host, certificates from Let's Encrypt (cert-manager
+#   reads the annotation and issues one Certificate per listener)
+#   HTTP :80 only redirects to HTTPS and answers ACME HTTP-01 challenges
+# Host names, IP name and client ID are patched by Terraform
+# (modules/platform/public.tf); the values below are placeholders.
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayParameters
+metadata:
+  name: public-lb
+  namespace: agentgateway-system
+spec:
+  service:
+    metadata:
+      annotations:
+        service.beta.kubernetes.io/azure-pip-name: PIP-REPLACE-ME
+        service.beta.kubernetes.io/azure-load-balancer-resource-group: RG-REPLACE-ME
+        # TCP probe: an HTTP probe on "/" would get the 301 redirect and mark
+        # every node unhealthy.
+        service.beta.kubernetes.io/azure-load-balancer-health-probe-protocol: tcp
+    spec:
+      type: LoadBalancer
+  # The public proxy calls Foundry too (api.<host>): its own managed identity,
+  # federated to system:serviceaccount:agentgateway-system:agentgateway-public.
+  serviceAccount:
+    metadata:
+      annotations:
+        azure.workload.identity/client-id: CLIENT-ID-REPLACE-ME
+  deployment:
+    spec:
+      template:
+        metadata:
+          labels:
+            azure.workload.identity/use: "true"
+  # Same price list as the internal door (gateway/deploy, ConfigMap model-costs).
+  modelCatalog:
+    sources:
+      - configMap: { name: model-costs }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentgateway-public
+  namespace: agentgateway-system
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  gatewayClassName: agentgateway
+  infrastructure:
+    parametersRef:
+      group: agentgateway.dev
+      kind: AgentgatewayParameters
+      name: public-lb
+  listeners:
+    # 0 — HTTP: redirect to HTTPS + ACME challenges
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: { agentic.io/public: "true" }
+    # 1 — LibreChat
+    - name: https-chat
+      protocol: HTTPS
+      port: 443
+      hostname: CHAT-HOST-REPLACE-ME
+      tls:
+        mode: Terminate
+        certificateRefs: [{ kind: Secret, name: public-chat-tls }]
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: { agentic.io/public: "true" }
+    # 2 — Grafana (behind oauth2-proxy)
+    - name: https-grafana
+      protocol: HTTPS
+      port: 443
+      hostname: GRAFANA-HOST-REPLACE-ME
+      tls:
+        mode: Terminate
+        certificateRefs: [{ kind: Secret, name: public-grafana-tls }]
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: { agentic.io/public: "true" }
+    # 3 — kagent UI (behind oauth2-proxy)
+    - name: https-kagent
+      protocol: HTTPS
+      port: 443
+      hostname: KAGENT-HOST-REPLACE-ME
+      tls:
+        mode: Terminate
+        certificateRefs: [{ kind: Secret, name: public-kagent-tls }]
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: { agentic.io/public: "true" }
+    # 4 — LLM API: /v1 (Entra ID token) and /agents/v1 (team key)
+    - name: https-api
+      protocol: HTTPS
+      port: 443
+      hostname: API-HOST-REPLACE-ME
+      tls:
+        mode: Terminate
+        certificateRefs: [{ kind: Secret, name: public-api-tls }]
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels: { agentic.io/public: "true" }

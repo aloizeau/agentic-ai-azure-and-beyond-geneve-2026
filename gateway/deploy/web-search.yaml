@@ -1,0 +1,131 @@
+# ---------------------------------------------------------------------------
+# Recherche web (DuckDuckGo) publiée par la plateforme comme serveur MCP.
+# Gratuit, sans clé API : le paquet duckduckgo-mcp-server (MIT) est lancé en
+# streamable-http et exposé au SEUL proxy de la gateway. Les gens y accèdent
+# depuis LibreChat via /mcp-web (jeton Entra ID), jamais en direct : chaque
+# appel d'outil est donc authentifié, plafonné et compté comme les autres
+# (dashboard "Usage IA", label server="web-search").
+#
+# Image : image officielle `uv` (astral-sh), le paquet est installé au premier
+# démarrage via uvx (extra [browser] : DuckDuckGo bloque le client httpx nu).
+# À préchauffer à H-30 et à épingler sur un digest à la répétition D-7.
+# Outils exposés : search, fetch_content, expand_link.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-search-mcp
+  labels:
+    app: web-search-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-search-mcp
+  template:
+    metadata:
+      labels:
+        app: web-search-mcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: mcp
+          image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim   # à épingler sur un digest
+          command: ["uvx"]
+          args:
+            - "--from"
+            - "duckduckgo-mcp-server[browser]==0.7.0"
+            - "duckduckgo-mcp-server"
+            - "--transport"
+            - "streamable-http"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "9000"
+          env:
+            # Derrière le proxy, le Host reçu n'est pas localhost : on autorise
+            # les noms de Service (sinon 421 Misdirected Request).
+            - name: DDG_ALLOWED_HOSTS
+              value: "web-search-mcp.agentgateway-system.svc.cluster.local,web-search-mcp.agentgateway-system.svc.cluster.local:*,web-search-mcp,web-search-mcp:*,localhost,127.0.0.1"
+            - name: DDG_SAFE_SEARCH
+              value: "MODERATE"
+            - name: HOME
+              value: /tmp
+            - name: UV_CACHE_DIR
+              value: /tmp/uv-cache
+          ports:
+            - containerPort: 9000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          readinessProbe:
+            tcpSocket: { port: 9000 }
+            initialDelaySeconds: 20        # laisse uvx installer le paquet au 1er démarrage
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket: { port: 9000 }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-search-mcp
+  labels:
+    app: web-search-mcp
+spec:
+  selector:
+    app: web-search-mcp
+  ports:
+    - port: 9000
+      targetPort: 9000
+---
+# Ingress : seuls les pods de la gateway atteignent le serveur MCP.
+# Egress : DNS + Internet (443/80) uniquement — jamais le réseau interne du
+# cluster (défense SSRF, cohérente avec le discours "garde-fous").
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-search-mcp
+spec:
+  podSelector:
+    matchLabels:
+      app: web-search-mcp
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-proxy }
+      ports: [{ port: 9000 }]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 80 }

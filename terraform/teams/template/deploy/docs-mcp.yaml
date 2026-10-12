@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docs-mcp
+  labels: { app: docs-mcp }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: docs-mcp }
+  template:
+    metadata:
+      labels:
+        app: docs-mcp
+        azure.workload.identity/use: "true"   # le webhook projette le jeton fédéré
+    spec:
+      serviceAccountName: docs-mcp
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: docs-mcp
+          image: docs-mcp
+          ports:
+            - { name: mcp, containerPort: 8080 }
+          env:
+            - { name: STORAGE_ACCOUNT, value: __STORAGE__ }
+            - { name: STORAGE_CONTAINER, value: documents }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            tcpSocket: { port: mcp }
+            periodSeconds: 5
+---
+# Publication sur la passerelle : ce label, ce port et ces annotations suffisent.
+# La passerelle (backend mcp-equipes) découvre ce Service et l'expose aux
+# utilisateurs de LibreChat sur /mcp-equipes, jeton Entra ID obligatoire.
+apiVersion: v1
+kind: Service
+metadata:
+  name: docs-mcp
+  labels:
+    app: docs-mcp
+    agentic.io/publier-mcp: "true"
+  annotations:
+    agentgateway.dev/mcp-path: /mcp
+    agentgateway.dev/mcp-target-name: __MCP_TARGET__
+spec:
+  selector: { app: docs-mcp }
+  ports:
+    - name: mcp
+      port: 8080
+      targetPort: mcp
+      appProtocol: agentgateway.dev/mcp

@@ -1,0 +1,44 @@
+# NVIDIA NIM Operator CRD — validated against apps.nvidia.com_nemoguardrails.yaml
+# (k8s-nim-operator main, Sept 2026). Points the microservice at the SAME internal gateway, so
+# rails' own LLM calls stay metered and keyless.
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NemoGuardrail
+metadata:
+  name: nemoguardrails
+spec:
+  configStore:
+    # Same rails as library mode. ⚠️ The expected ConfigMap layout for the
+    # microservice (one config per key? per folder?) is not documented in the
+    # operator guide — validate before relying on it.
+    configMap:
+      name: guardrail-rails-strict
+  nimEndpoint:
+    # Any OpenAI-spec endpoint is accepted ("NIM endpoints must support the
+    # OpenAI spec"): here, our unguarded internal agentgateway listener.
+    baseURL: "http://agentgateway-internal.agentgateway-system.svc.cluster.local:8080/v1"
+  # Field present in the NIM Operator CRD schema (not shown in the guide).
+  # Here: a CloudNativePG `Cluster` named guardrail-pg (rw service convention).
+  databaseConfig:
+    host: guardrail-pg-rw.agentgateway-system.svc.cluster.local
+    port: 5432
+    databaseName: guardraildb
+    credentials:
+      user: guardrail
+      secretName: guardrail-pg-app
+      passwordKey: password
+  expose:
+    service:
+      type: ClusterIP
+      port: 8000
+  image:
+    repository: nvcr.io/nvidia/nemo-microservices/guardrails
+    tag: "25.10"
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - ngc-secret
+  metrics:
+    serviceMonitor: {}
+  replicas: 2
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }

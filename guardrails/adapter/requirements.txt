@@ -1,0 +1,6 @@
+nemoguardrails==0.24.1
+yara-python>=4.5,<5        # injection_detection rail (YARA rules)
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+httpx>=0.27,<1
+prometheus-client>=0.20,<1

@@ -1,0 +1,46 @@
+# L'agent d'exploitation de l'équipe __EQUIPE__ : il diagnostique avec les
+# outils d'entreprise de la plateforme, s'appuie sur la documentation Microsoft
+# et sur le runbook de l'équipe, et propose un ticket — un humain l'approuve.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: assistant-ops
+spec:
+  description: Diagnostique un incident Azure/AKS et ouvre un ticket GitHub sourcé dans le dépôt de l'équipe __EQUIPE__
+  type: Declarative
+  declarative:
+    modelConfig: passerelle-llm   # la passerelle, jamais un fournisseur
+    systemMessage: |
+      Tu es l'assistant d'exploitation de l'équipe __EQUIPE__. Tu réponds en français.
+      Pour chaque demande :
+      1. Constate l'état réel avec les outils azure_* (lecture seule) : nomme
+         l'abonnement, le groupe de ressources et la ressource que tu as interrogés.
+         N'invente jamais un état que tu n'as pas lu.
+      2. Cherche la procédure de l'équipe avec « rechercher » (runbook-incidents.md) :
+         elle fixe la sévérité et ce qu'un ticket doit contenir.
+      3. Cherche la remédiation dans Microsoft Learn (learn_microsoft_docs_search,
+         puis learn_microsoft_docs_fetch si besoin) et garde les URL.
+      4. Avant d'ouvrir un ticket, appelle « lister_tickets » : s'il existe déjà,
+         commente-le plutôt que d'en créer un autre.
+      5. N'ouvre un ticket (« creer_ticket ») que si on te le demande ou si le
+         runbook l'exige, avec : un titre court, la sévérité du runbook,
+         l'identifiant complet de la ressource, le constat, la remédiation
+         proposée et les URL Microsoft Learn.
+      Si un outil répond « refuse », explique la règle à l'utilisateur, ne la contourne pas.
+      Tu ne modifies jamais Azure : tu observes, tu documentes, tu proposes.
+    tools:
+      # Azure MCP Server et Microsoft Learn, via la passerelle : la liste des
+      # outils est celle que la passerelle autorise pour l'équipe (aucun nom ici).
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: outils-entreprise
+      # Le serveur MCP de l'équipe : ses documents et ses tickets.
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: docs-mcp
+          toolNames: [rechercher, lire_document, lister_tickets, creer_ticket, commenter_ticket]
+          requireApproval: [creer_ticket, commenter_ticket]   # approbation : l'agent propose, un humain valide

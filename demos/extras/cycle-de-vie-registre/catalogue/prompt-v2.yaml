@@ -1,0 +1,14 @@
+# Version 2 of the prompt: published next to v1, which stays available.
+# Applied live by run.sh (step 4), then rolled back to v1 (step 5).
+apiVersion: ar.dev/v1alpha1
+kind: Prompt
+metadata:
+  name: assistant-tickets
+  tag: v2
+spec:
+  description: "Prompt système de l'agent assistant-tickets — version 2 : priorisation"
+  content: |
+    Tu aides l'équipe produit à trier ses tickets Jira.
+    Réponds en français, en citant les clés des tickets.
+    Classe toujours les tickets en trois groupes : bloquant, à planifier, à clore,
+    et termine par la liste des tickets sans responsable.

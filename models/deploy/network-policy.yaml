@@ -1,0 +1,24 @@
+# Only the gateway proxies may call the model. Nobody reaches vLLM directly —
+# not LibreChat, not an agent: every token goes through the gateway, so every
+# token is authenticated, guarded and metered.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-ingress
+  namespace: models
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: kaito.sh/workspace, operator: Exists }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: agentgateway-system }
+          podSelector:
+            matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-proxy }
+      ports: [{ port: 5000 }]           # Service :80 -> vLLM :5000
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports: [{ port: 5000 }]

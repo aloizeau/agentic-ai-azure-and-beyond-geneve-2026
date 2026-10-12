@@ -1,0 +1,21 @@
+# What the team writes — and all it writes. Shown on the slide.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: assistant-tickets
+  namespace: equipe-produit
+spec:
+  description: Trie les tickets Jira de l'équipe
+  type: Declarative
+  declarative:
+    modelConfig: passerelle-llm   # jamais un fournisseur
+    systemMessage: |
+      Tu aides l'équipe produit à trier ses tickets Jira.
+      Réponds en français, en citant les clés des tickets.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: MCPServer
+          name: jira-mcp
+          toolNames: [jira_search, jira_get_issue]

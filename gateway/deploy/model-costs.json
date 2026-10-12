@@ -1,0 +1,19 @@
+{
+  "providers": {
+    "azure": {
+      "models": {
+        "gpt-56-terra-eu": { "rates": { "input": "2.00", "output": "12.00", "cacheRead": "0.20", "cacheWrite": "2.50" } },
+        "gpt-5.6-terra":   { "rates": { "input": "2.00", "output": "12.00", "cacheRead": "0.20", "cacheWrite": "2.50" } },
+        "gpt-56-luna-eu":  { "rates": { "input": "0.20", "output": "1.20", "cacheRead": "0.02", "cacheWrite": "0.25" } },
+        "gpt-5.6-luna":    { "rates": { "input": "0.20", "output": "1.20", "cacheRead": "0.02", "cacheWrite": "0.25" } },
+        "gpt-56-sol-global": { "rates": { "input": "5.00", "output": "30.00", "cacheRead": "0.50", "cacheWrite": "6.25" } },
+        "gpt-5.6-sol":       { "rates": { "input": "5.00", "output": "30.00", "cacheRead": "0.50", "cacheWrite": "6.25" } }
+      }
+    },
+    "kaito": {
+      "models": {
+        "phi-4-mini-instruct": { "rates": { "input": "0", "output": "0" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# Même namespace que tools/enterprise (option enable_enterprise_tools) : les deux
+# peuvent coexister, les noms ne se recouvrent pas (azure-mcp ≠ mcp-azure).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: outils-entreprise
+  labels:
+    agentic.io/plateforme: "true"

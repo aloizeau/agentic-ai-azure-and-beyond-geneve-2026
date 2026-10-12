@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------------------
+# The self-hosted model behind the SAME gateway as Foundry.
+#
+# `custom` provider (agentgateway v1.5): a non-managed, OpenAI-compatible
+# target. `backendRef` may only point to a namespace-local Service, and the
+# model lives in `models`, so host + port are used (cluster DNS).
+# `providerOverride` is what Grafana shows in gen_ai_system.
+#
+# Validated against the agentgateway v1.5.0 CRD schema, including its CEL rules
+# (custom => exactly one of backendRef | host+port; format paths exclude path).
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: llm-aks
+  namespace: agentgateway-system
+spec:
+  ai:
+    provider:
+      host: workspace-phi-4-mini.models.svc.cluster.local
+      port: 80
+      custom:
+        model: phi-4-mini-instruct        # served name; clients may send any model
+        providerOverride: kaito
+        formats:
+          - type: Completions
+            path: /v1/chat/completions
+  policies:
+    ai:
+      routes:
+        "/v1/chat/completions": "Completions"
+---
+# Separate path on the MAIN gateway: LibreChat shows it as its own endpoint
+# ("Hébergé dans AKS"), kagent uses it through a ModelConfig.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-aks
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /aks/v1
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: llm-aks
+      timeouts:
+        request: 120s                     # first token is slower on a cold GPU
+---
+# Same model for agents (kagent): /agents/aks/v1, team virtual keys instead of
+# a user token — mirrors /agents/v1 on the Foundry side.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llm-aks-agents
+  namespace: agentgateway-system
+spec:
+  parentRefs:
+    - name: agentgateway-proxy
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /agents/aks/v1
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: llm-aks
+      timeouts:
+        request: 120s

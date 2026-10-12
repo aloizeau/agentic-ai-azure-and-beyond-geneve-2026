@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# A self-hosted model has NO Microsoft Foundry content filter in front of it.
+# The only guardrails it gets are the gateway's — which is the whole point:
+# the rules follow the traffic, not the provider.
+#
+#   - Entra ID JWT, same issuer/audience as the Foundry route
+#   - token ceiling per route
+#   - content rules: the gateway-wide policy `garde-fous-llm` already targets
+#     this route (gateway/deploy/policies.yaml, or guardrails/ when NeMo is on)
+# Issuer, JWKS URL and audience are patched by Terraform.
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-aks-controls
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm-aks
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: https://login.microsoftonline.com/TENANT_ID/v2.0
+          audiences: [GATEWAY_API_CLIENT_ID]   # v2 tokens: aud = client-ID GUID
+          jwks:
+            remote:
+              url: https://login.microsoftonline.com/TENANT_ID/discovery/v2.0/keys
+    rateLimit:
+      local:
+        - tokens: 20000
+          unit: Minutes
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: llm-aks-agents-controls
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: llm-aks-agents
+  traffic:
+    apiKeyAuthentication:
+      mode: Strict
+      secretSelector:
+        matchLabels:
+          agentic.io/virtual-key: "true"
+    rateLimit:
+      local:
+        - tokens: 20000
+          unit: Minutes

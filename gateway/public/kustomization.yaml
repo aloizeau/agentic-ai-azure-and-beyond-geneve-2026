@@ -1,0 +1,16 @@
+# Public exposure (optional): a second Gateway on a static public IP.
+#   Terraform applies it when public_exposure is set (modules/platform/public.tf)
+#   and patches host names, IP name, client ID and ACME e-mail.
+# No `namespace:` here on purpose: routes live in the namespaces they serve.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: agentic-platform
+    includeSelectors: false
+
+resources:
+  - cluster-issuer.yaml
+  - gateway.yaml
+  - routes.yaml

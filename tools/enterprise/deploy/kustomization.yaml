@@ -1,0 +1,12 @@
+# Outils d'entreprise (OPTION). Appliqué par Terraform quand
+# enable_enterprise_tools = true (terraform_data.enterprise_tools), ou à la
+# main : kubectl apply -k tools/enterprise/deploy
+# Les ressources portent leur propre namespace (workloads : outils-entreprise ;
+# backends/routes : agentgateway-system) — pas de namespace global ici.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - workloads.yaml
+  - network-policies.yaml
+  - gateway.yaml

@@ -1,0 +1,38 @@
+# ---------------------------------------------------------------------------
+# Who consumes what: three labels added to every agentgateway metric (tokens,
+# cost, requests, MCP calls), on both doors (internal and public).
+#   user   people: Entra ID preferred_username (oid if absent)
+#          agents: "agent:<team>" from the virtual key metadata
+#          rejected before authentication (401): "anonyme"
+#   team   the virtual key's team for agents, "collaborateurs" for people
+#   agent  the kagent agent asked through the MCP tool invoke_agent
+#          ("<namespace>/<name>"), "-" for everything else
+# Read by the Grafana dashboard "Usage IA — utilisateurs, coûts, outils"
+# (monitoring/dashboards/usage-ia.json).
+#
+# Cardinality: one Prometheus series per user × model × route. Fine for a demo
+# or a pilot. At the scale of a 3,000-person company, keep `team` (and a
+# department claim) in Prometheus and send per-user detail to the access logs
+# / OpenTelemetry instead: set usage_metrics_per_user = false in Terraform,
+# which removes the `user` label.
+# Validated against the agentgateway v1.5.0 CRD schema.
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: metriques-usage
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: Gateway, name: agentgateway-proxy }
+    - { group: gateway.networking.k8s.io, kind: Gateway, name: agentgateway-public } # gateway/public, optional
+  frontend:
+    metrics:
+      attributes:
+        add:
+          # index 0 — removed by Terraform when usage_metrics_per_user = false
+          - name: user
+            expression: 'default(jwt.preferred_username, default(jwt.oid, default("agent:" + apiKey.team, "anonyme")))'
+          - name: team
+            expression: 'default(apiKey.team, "collaborateurs")'
+          - name: agent
+            expression: 'default(mcp.tool.arguments.agent, "-")'

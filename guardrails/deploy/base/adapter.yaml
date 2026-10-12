@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guardrail-adapter
+  labels: { app.kubernetes.io/name: guardrail-adapter }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: guardrail-adapter }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: guardrail-adapter }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: guardrail-adapter }
+      containers:
+        - name: adapter
+          image: nemo-guardrail-adapter
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: BACKEND, value: library }
+            - { name: RAILS_ROOT, value: /rails }
+            - { name: DEFAULT_PROFILE, value: default }
+            - { name: FAIL_MODE, value: closed }     # engine error => reject
+            - { name: HOME, value: /tmp }            # NeMo caches under $HOME
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: rails-default, mountPath: /rails/default, readOnly: true }
+            - { name: rails-strict, mountPath: /rails/strict, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: rails-default
+          configMap: { name: guardrail-rails-default }
+        - name: rails-strict
+          configMap: { name: guardrail-rails-strict }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guardrail-adapter
+  labels: { app.kubernetes.io/name: guardrail-adapter }
+spec:
+  selector: { app.kubernetes.io/name: guardrail-adapter }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: guardrail-adapter
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: guardrail-adapter }

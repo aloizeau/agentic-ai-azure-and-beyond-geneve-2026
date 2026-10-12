@@ -1,0 +1,30 @@
+# Enterprise variant: the rail engine is the NeMo Guardrails MICROSERVICE,
+# deployed and managed by the NVIDIA NIM Operator through its NemoGuardrail CRD.
+#
+# Prerequisites (NVIDIA documentation):
+#   - NIM Operator installed (provides apps.nvidia.com/v1alpha1 NemoGuardrail)
+#   - NVIDIA AI Enterprise entitlement: the microservice is "available for the
+#     NVIDIA AI Enterprise plan"; image pulled from nvcr.io with an NGC key
+#     (Secret "ngc-secret")
+#   - a PostgreSQL database for the guardrail configuration store
+#     (e.g. a CloudNativePG `Cluster` CR to stay cloud-agnostic)
+#
+# The adapter stays in place: agentgateway speaks the webhook contract, the
+# adapter translates it to POST /v1/guardrail/checks.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../deploy
+  - nemoguardrail.yaml
+patches:
+  - target: { kind: Deployment, name: guardrail-adapter }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: microservice
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: NEMO_URL, value: "http://nemoguardrails:8000" }
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: NEMO_MODEL, value: gpt-56-terra-eu }

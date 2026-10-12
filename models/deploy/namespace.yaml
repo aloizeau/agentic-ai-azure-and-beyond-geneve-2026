@@ -1,0 +1,6 @@
+# Self-hosted models live in their own namespace: GPU workloads, their own
+# NetworkPolicy, their own lifecycle (a GPU node costs by the hour).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: models

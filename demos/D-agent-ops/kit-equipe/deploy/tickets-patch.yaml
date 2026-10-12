@@ -1,0 +1,27 @@
+# Les tickets GitHub du serveur MCP de l'équipe : le dépôt cible, et
+# l'application GitHub de la plateforme (Secret « github-app », posé par
+# Agent Ready — l'équipe ne peut ni le lire ni l'écrire, son pod l'utilise).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docs-mcp
+spec:
+  template:
+    spec:
+      containers:
+        - name: docs-mcp
+          env:
+            - { name: GITHUB_REPOSITORY, value: __GITHUB_REPO__ }   # le dépôt de l'équipe, et lui seul
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef: { name: github-app, key: app-id }
+            - { name: GITHUB_APP_PRIVATE_KEY_PATH, value: /var/run/github-app/private-key }
+            - { name: TICKETS_MAX_CREATIONS, value: "5" }          # par fenêtre de 10 min
+          volumeMounts:
+            - { name: github-app, mountPath: /var/run/github-app, readOnly: true }
+      volumes:
+        - name: github-app
+          secret:
+            secretName: github-app
+            items: [{ key: private-key, path: private-key }]
+            defaultMode: 0440

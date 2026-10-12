@@ -1,0 +1,22 @@
+# Let's Encrypt, HTTP-01 through the public Gateway: cert-manager creates a
+# temporary HTTPRoute on the `http` listener for each challenge. No DNS token
+# in the cluster. Terraform patches the contact e-mail, or removes it.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: EMAIL-REPLACE-ME
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - group: gateway.networking.k8s.io
+                kind: Gateway
+                name: agentgateway-public
+                namespace: agentgateway-system
+                sectionName: http

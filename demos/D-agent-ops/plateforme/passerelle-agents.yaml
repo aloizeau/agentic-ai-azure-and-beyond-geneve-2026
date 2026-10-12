@@ -1,0 +1,108 @@
+# ---------------------------------------------------------------------------
+# /agents/mcp-entreprise : les outils d'entreprise pour les AGENTS.
+#   identité    la clé virtuelle de l'équipe (comme /agents/v1)
+#   outils      Azure MCP Server (dans le cluster) + Microsoft Learn (distant,
+#               HTTPS) fédérés derrière un seul point d'entrée, préfixés
+#               azure_* et learn_*
+#   droits      Learn pour toutes les équipes ; Azure pour les équipes listées ;
+#               un outil non autorisé disparaît du tools/list
+#   trace       metriques-usage (Gateway) : team = équipe de la clé, server = cible
+# Marqués VÉRIFIER : champs à confirmer contre les CRD agentgateway v1.5.0.
+# ---------------------------------------------------------------------------
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: mcp-entreprise-agents
+  namespace: agentgateway-system
+spec:
+  mcp:
+    prefixMode: Always      # azure_<outil>, learn_<outil> : on voit qui sert l'outil
+    failureMode: FailOpen   # Learn injoignable (réseau du lieu) : Azure reste servi
+    targets:
+      - name: azure
+        static:
+          host: azure-mcp.outils-entreprise.svc.cluster.local
+          port: 8080
+          path: /           # VÉRIFIER : chemin MCP du serveur Azure en HTTP
+          protocol: StreamableHTTP
+      - name: learn
+        static:
+          host: learn.microsoft.com
+          port: 443
+          path: /api/mcp
+          protocol: StreamableHTTP
+          policies:
+            tls:
+              sni: learn.microsoft.com
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mcp-entreprise-agents
+  namespace: agentgateway-system
+spec:
+  parentRefs: [{ name: agentgateway-proxy }]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /agents/mcp-entreprise } }]
+      backendRefs: [{ group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-entreprise-agents }]
+      timeouts: { request: 60s }
+---
+# Qui : une clé virtuelle d'équipe, ou rien (401). Même sélecteur que acces-agents.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: acces-agents-outils
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-entreprise-agents }
+  traffic:
+    apiKeyAuthentication:
+      mode: Strict
+      secretSelector:
+        matchLabels:
+          agentic.io/virtual-key: "true"
+    rateLimit:
+      local:
+        - requests: 120     # VÉRIFIER : appels d'outils par minute et par route
+          unit: Minutes
+---
+# Quoi : la liste blanche des outils, par équipe (règles en OU).
+#   - Learn : recherche et lecture de la documentation, pour toutes les équipes
+#     (microsoft_code_sample_search n'est pas ouvert : il disparaît du tools/list) ;
+#   - Azure : uniquement les équipes de la liste (prepare.ps1 -EquipesAzure).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: outils-entreprise-autorises
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - { group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-entreprise-agents }
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'mcp.tool.name in ["learn_microsoft_docs_search", "learn_microsoft_docs_fetch"]'
+            - 'mcp.tool.name.startsWith("azure_") && apiKey.team in __EQUIPES_AZURE__'   # VÉRIFIER : apiKey dans ce contexte
+---
+# Les outils publiés par les équipes pour les PERSONNES (/mcp-equipes, LibreChat) :
+# lecture seule. Créer ou commenter un ticket reste un geste de l'agent, avec
+# approbation humaine dans kagent — pas un bouton ouvert à tout le tenant.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: outils-equipes-lecture
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - { group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-equipes }
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - '!mcp.tool.name.endsWith("_creer_ticket") && !mcp.tool.name.endsWith("_commenter_ticket")'

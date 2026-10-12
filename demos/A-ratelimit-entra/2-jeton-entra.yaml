@@ -1,0 +1,22 @@
+# Étape 2 : personne n'entre sans un jeton Entra ID valide.
+# Les valeurs __ISSUER__, __AUDIENCE__ et __JWKS__ sont recopiées par run.ps1
+# depuis la politique acces-llm de la plateforme (même tenant, même API).
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: protection-demo
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: demo-a
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-demo-ouverte }
+  traffic:
+    jwtAuthentication:
+      mode: Strict                     # pas de jeton, ou jeton invalide : 401
+      providers:
+        - issuer: __ISSUER__
+          audiences: [__AUDIENCE__]    # jetons v2 : aud = GUID de l'application API
+          jwks:
+            remote:
+              url: __JWKS__

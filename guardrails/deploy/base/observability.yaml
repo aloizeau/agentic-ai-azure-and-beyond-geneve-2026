@@ -1,0 +1,39 @@
+# Prometheus Operator CRDs (installed by kube-prometheus-stack, release "kps").
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: guardrail-adapter
+  labels:
+    release: kps            # without this label the operator ignores the monitor
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: guardrail-adapter }
+  endpoints:
+    - { port: http, path: /metrics, interval: 15s }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: guardrail-adapter
+  labels: { release: kps }
+spec:
+  groups:
+    - name: guardrails
+      rules:
+        - record: guardrails:block_ratio:rate5m
+          expr: |
+            sum(rate(guardrail_adapter_decisions_total{action=~"reject|mask"}[5m]))
+            /
+            sum(rate(guardrail_adapter_decisions_total[5m]))
+        - alert: GuardrailEngineFailing
+          expr: sum(rate(guardrail_adapter_errors_total[5m])) > 0
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "Guardrail engine errors — requests are being rejected (fail-closed)."
+        - alert: GuardrailLatencyHigh
+          expr: histogram_quantile(0.95, sum by (le) (rate(guardrail_adapter_check_duration_seconds_bucket[5m]))) > 1
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: "p95 guardrail check above 1 s — every LLM call pays this latency."

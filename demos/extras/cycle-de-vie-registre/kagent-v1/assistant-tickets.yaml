@@ -1,0 +1,47 @@
+# kagent 1.0 (alpha, api.kagent.dev/v1alpha3) — the same agent as ../agent.yaml,
+# rewritten for the new model. NOT applied by the demo: the platform runs
+# kagent 0.10.x. Shown on the slide "kagent 0.10 → 1.0".
+#
+#   0.10 : Agent type Declarative (prompt, tools, model in one object)
+#   1.0  : no more `type: Declarative` — Agent = AgentTemplate (what the agent
+#          does) + Harness (how it runs: kagent ADK, Codex, Claude or BYO).
+#
+# Validated against the kagent v1.0.0-alpha8 CRDs (schema). Placeholders to
+# replace before use: the image digest and the Substrate worker pool/snapshots.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: assistant-tickets
+  namespace: equipe-produit
+spec:
+  description: Trie les tickets Jira de l'équipe
+  modelConfig: { name: passerelle-llm }          # api.kagent.dev ModelConfig → the gateway
+  systemPromptFrom: { name: prompt-assistant-tickets, key: prompt }
+  tools:
+    - mcp:
+        server: { kind: RemoteMCPServer, name: jira-mcp }   # MCPServer (kmcp) no longer referenced directly
+        tools: [jira_search, jira_get_issue]
+---
+# One Harness per runtime class, shared by the team's agents.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: adk-go
+  namespace: equipe-produit
+spec:
+  kagent: {}        # managed harness: kagent Go ADK (byo: {} + workload.command for your own image)
+  workload:
+    # Digest-pinned image, mandatory in 1.0 (tags are rejected).
+    image: ghcr.io/kagent-dev/kagent/golang-adk@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  substrate:
+    workerPoolRef: { name: default }
+    snapshotPolicy: { location: "s3://kagent-snapshots/equipe-produit" }
+---
+apiVersion: api.kagent.dev/v1alpha3
+kind: Agent
+metadata:
+  name: assistant-tickets
+  namespace: equipe-produit
+spec:
+  templateRef: { name: assistant-tickets }
+  harnessRef: { name: adk-go }
