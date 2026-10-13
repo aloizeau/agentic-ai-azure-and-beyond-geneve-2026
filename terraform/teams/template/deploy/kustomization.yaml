@@ -1,10 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: __EQUIPE__
+# Pas de NetworkPolicy ici : celles du namespace (entrées du serveur MCP, sorties
+# de tous les pods) sont posées par Agent Ready (terraform/teams) et le pipeline
+# de l'équipe ne peut que les lire.
 resources:
   - serviceaccount.yaml
   - docs-mcp.yaml
-  - networkpolicy.yaml
   - remotemcpserver.yaml
 images:
   - name: docs-mcp

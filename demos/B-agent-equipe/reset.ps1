@@ -14,6 +14,9 @@
 #>
 [CmdletBinding()]
 param(
+  # -cmatch, \A…\z : sensible à la casse, pas de saut de ligne final toléré (même règle
+  # que la variable equipe de terraform/teams).
+  [ValidateScript({ $_ -cmatch '\A[a-z][a-z0-9-]{1,18}[a-z0-9]\z' -and $_ -notmatch '--' })]
   [string]$Equipe = "equipe-docs",
   [switch]$Local
 )

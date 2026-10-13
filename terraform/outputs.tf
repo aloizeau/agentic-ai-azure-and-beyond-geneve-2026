@@ -136,3 +136,4 @@ output "aks_ca_certificate" { value = module.foundation.ca_certificate }
 output "teams_resource_group_name" { value = module.agent_ready.teams_resource_group_name }
 output "ai_team_client_id" { value = module.agent_ready.ai_team_client_id }
 output "ai_team_principal_id" { value = module.agent_ready.ai_team_principal_id }
+output "ai_team_role_assignments" { value = module.agent_ready.ai_team_role_assignments }

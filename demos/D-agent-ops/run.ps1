@@ -18,7 +18,8 @@
   6. Même demande rejouée : pas de doublon. Tout est compté par équipe dans Grafana.
 
   Prérequis : prepare.ps1 (une fois), et ceux de la démo B. Port-forward de l'UI
-  kagent (8081) ouvert pour l'approbation.
+  kagent (8081) ouvert : l'agent est interrogé (étape 4) et approuvé (étape 5) dans
+  l'UI — il n'est pas publié aux personnes sur /mcp.
 
 .EXAMPLE
   ./demos/D-agent-ops/run.ps1
@@ -26,7 +27,9 @@
 #>
 [CmdletBinding()]
 param(
-  [ValidatePattern('^[a-z][a-z0-9-]{1,18}[a-z0-9]$')]   # inséré dans du YAML et du code poussés au dépôt
+  # Inséré dans du YAML et du code poussés au dépôt. -cmatch et \A…\z : ni
+  # majuscules, ni retour à la ligne final (« $ » de ValidatePattern l'accepte).
+  [ValidateScript({ $_ -cmatch '\A[a-z][a-z0-9-]{1,18}[a-z0-9]\z' })]
   [string]$Equipe = "equipe-ops",
   [string]$Description = "Agent d'exploitation : diagnostic Azure, documentation Microsoft, tickets GitHub",
   [switch]$SansAgentReady
@@ -57,19 +60,6 @@ function Show-Tools([string]$Label, [string]$Key) {
   $names = @($r.Result.result.tools | ForEach-Object { $_.name })
   Info ("{0,-22} {1}" -f $Label, ($names -join "  "))
   return $names
-}
-
-function Ask-Agent([string]$Question) {
-  $token = Get-UserToken
-  $call = Invoke-Mcp -Path "/mcp" -Token $token -Method "tools/call" -Params @{
-    name = "invoke_agent"; arguments = @{ agent = "$Equipe/assistant-ops"; task = $Question } }
-  if ($call.Code -eq 200 -and $call.Result -and ($call.Result.PSObject.Properties.Name -contains "result")) {
-    $text = ($call.Result.result.content | Where-Object { $_.PSObject.Properties.Name -contains "text" } | ForEach-Object { $_.text }) -join "`n"
-    Write-Host $text -ForegroundColor White
-    return $true
-  }
-  Ko "invoke_agent : HTTP $($call.Code)"
-  return $false
 }
 
 function Get-AgentIssues {
@@ -111,6 +101,11 @@ Wait-Demo
 
 # -----------------------------------------------------------------------------
 Step "2 · La passerelle : un point d'entrée, des outils par équipe"
+# Cluster préparé avant l'audit d'octobre 2026 : l'ancienne politique (liste noire)
+# s'additionnerait à la liste blanche de /mcp-equipes. prepare.ps1 la supprime.
+if (Test-Native { kubectl -n agentgateway-system get agentgatewaypolicy outils-equipes-lecture }) {
+  throw "agentgatewaypolicy outils-equipes-lecture encore présente : relancer ./demos/D-agent-ops/prepare.ps1 (ou reset.ps1 -Plateforme)"
+}
 Start-Gateway
 $anon = Invoke-Http -Method POST -Url "$($script:Gw)/agents/mcp-entreprise" -Body @{ jsonrpc = "2.0"; id = 1; method = "tools/list" }
 if ($anon.Code -eq 401) { Ok "sans clé : 401" } else { Ko "sans clé : attendu 401, reçu $($anon.Code)" }
@@ -163,8 +158,13 @@ Step "4 · L'agent diagnostique : Azure (lu), Microsoft Learn (cité), runbook (
 $diag = "Diagnostique le cluster AKS $aks (groupe de ressources $aksRg) : version de Kubernetes, état des pools de nœuds, " +
   "santé de la ressource. Compare la version au calendrier de support AKS sur Microsoft Learn, applique notre runbook " +
   "et propose un ticket (titre, sévérité, ressource, sources). Ne crée pas le ticket."
-Info "« $diag »"
-if (Ask-Agent $diag) { Ok "constat lu dans Azure (Reader), sources Learn, sévérité du runbook — coût attribué à $Equipe" }
+# Par l'UI kagent, comme l'étape 5 : assistant-ops (Reader Azure, tickets) n'est
+# PAS publié aux personnes — invoke_agent sur /mcp le refuse
+# (gateway/deploy/autorisations-mcp.yaml, liste des agents publiés).
+Info "UI kagent → http://localhost:8081 → $Equipe/assistant-ops →"
+Show-Code "  $diag"
+[void](Read-Host "  (Entrée une fois la réponse affichée)")
+Info "attendu : constat lu dans Azure (Reader), sources Learn, sévérité du runbook — coût attribué à $Equipe"
 Wait-Demo
 
 # -----------------------------------------------------------------------------
@@ -193,5 +193,6 @@ Info "Rejouer la même demande dans l'UI kagent (l'agent liste d'abord les ticke
 $after = @(Get-AgentIssues).Count
 if ($after -eq $issues.Count) { Ok "toujours $after ticket(s) ouvert(s) : l'existant est renvoyé ou commenté" } else { Ko "$after tickets ouverts (attendu $($issues.Count))" }
 Info "Depuis LibreChat (/mcp-equipes), creer_ticket et commenter_ticket n'existent pas : écrire reste un geste approuvé de l'agent."
-Info "Grafana « Usage IA » : équipe = $Equipe ; outils azure_*, learn_*, docs-$($Equipe)_* comptés."
+Info "Et sur /mcp, invoke_agent refuse $Equipe/assistant-ops : seuls les agents publiés par la plateforme répondent aux personnes."
+Info "Grafana « Usage IA » : équipe = $Equipe ; outils azure_*, learn_* et ceux de la cible MCP de l'équipe comptés."
 Info "Remise à zéro : ./demos/D-agent-ops/reset.ps1"

@@ -40,10 +40,11 @@ function Show-Yaml([string]$File, [string]$From) {
 Start-Gateway
 $prompt = "En deux phrases : pourquoi faut-il gouverner l'accès aux LLM ?"
 
-# Si la démo s'arrête avant la fin (erreur, Ctrl+C), la route /demo/v1 peut
-# rester ouverte : sans jeton, sans plafond, sans garde-fou. Le finally la
-# retire alors (même suppression que reset.ps1). En fin normale, rien ne change :
-# reset.ps1 reste l'étape de remise à zéro documentée.
+# La route /demo/v1 n'a pas les garde-fous de la plateforme (garde-fous-llm) :
+# elle ne doit pas survivre à la démo. Le finally retire TOUJOURS les objets
+# de la démo A (label app.kubernetes.io/part-of=demo-a, même suppression que
+# reset.ps1), en fin normale comme sur erreur ou Ctrl+C. Le tableau de bord
+# garde les métriques : seule la route disparaît.
 $demoTerminee = $false
 try {
   # -----------------------------------------------------------------------------
@@ -98,17 +99,19 @@ try {
   Info "http://localhost:3000/d/usage-ia — filtre Utilisateur = votre compte Entra ID :"
   Info "les appels authentifiés, leur coût, les 401 (anonymes) et le 429."
   Info "Grafana : kubectl -n monitoring port-forward svc/kps-grafana 3000:80"
-  Info "Remise à zéro : ./demos/A-ratelimit-entra/reset.ps1"
+  Info "La route /demo/v1 est retirée en sortie ; reset.ps1 reste disponible en secours."
   $demoTerminee = $true
 }
 finally {
-  if (-not $demoTerminee) {
-    Write-Warning "Démo interrompue : suppression de la route ouverte /demo/v1 et de sa politique."
-    try {
-      & kubectl -n $script:NsGw delete agentgatewaypolicy,httproute -l app.kubernetes.io/part-of=demo-a --ignore-not-found
-    }
-    catch {
-      Write-Warning "Échec du nettoyage : lancer ./demos/A-ratelimit-entra/reset.ps1 ($($_.Exception.Message))"
-    }
+  if ($demoTerminee) { Info "Fin de démo : suppression de la route /demo/v1 et de sa politique." }
+  else { Write-Warning "Démo interrompue : suppression de la route ouverte /demo/v1 et de sa politique." }
+  # & kubectl ne lève pas d'exception sur un échec : on lit $LASTEXITCODE.
+  $nettoye = $false
+  try {
+    & kubectl -n $script:NsGw delete agentgatewaypolicy,httproute -l app.kubernetes.io/part-of=demo-a --ignore-not-found
+    $nettoye = ($LASTEXITCODE -eq 0)
   }
+  catch { Write-Warning "kubectl delete : $($_.Exception.Message)" }
+  if ($nettoye) { Ok "objets de la démo A supprimés (route /demo/v1 fermée)" }
+  else { Write-Warning "Échec du nettoyage : la route /demo/v1 est peut-être encore ouverte — lancer ./demos/A-ratelimit-entra/reset.ps1" }
 }

@@ -37,7 +37,7 @@ kubectl -n monitoring port-forward svc/kps-grafana 3000:80     # http://localhos
 ./demos/A-ratelimit-entra/run.ps1
 ./demos/B-agent-equipe/run.ps1          # -Equipe equipe-docs by default
 ./demos/C-nemo-guardrails/run.ps1       # -AvecPanne to show fail-closed
-./demos/D-agent-ops/run.ps1             # -Equipe equipe-ops by default; ticket approval in the kagent UI
+./demos/D-agent-ops/run.ps1             # -Equipe equipe-ops by default; agent asked and ticket approved in the kagent UI
 ```
 
 If a live demo stalls for more than 5 seconds: switch to its video and keep talking.
@@ -45,10 +45,10 @@ If a live demo stalls for more than 5 seconds: switch to its video and keep talk
 ### Between rehearsals
 
 ```powershell
-./demos/A-ratelimit-entra/reset.ps1
+./demos/A-ratelimit-entra/reset.ps1      # backup only: run.ps1 always removes /demo/v1 on exit
 ./demos/B-agent-equipe/reset.ps1          # terraform destroy of the team, through the pipeline (-Local: from here)
 ./demos/C-nemo-guardrails/reset.ps1
-./demos/D-agent-ops/reset.ps1             # equipe-ops (and its issues); -Plateforme: Azure MCP, route, identity
+./demos/D-agent-ops/reset.ps1             # equipe-ops (and its issues); -Plateforme: Azure MCP, route, identity, stale outils-equipes-lecture policy
 ```
 
 ## 50-minute deck — Chalet Azure (slides/build.js) — [chalet/](chalet)

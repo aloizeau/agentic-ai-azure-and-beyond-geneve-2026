@@ -31,6 +31,7 @@ spec:
             - { name: RAILS_ROOT, value: /rails }
             - { name: DEFAULT_PROFILE, value: default }
             - { name: FAIL_MODE, value: closed }     # engine error => reject
+            - { name: TOOL_RAILS, value: secrets }   # messages tool : secrets seulement (README, limites)
             - { name: HOME, value: /tmp }            # NeMo caches under $HOME
           readinessProbe:
             httpGet: { path: /readyz, port: http }

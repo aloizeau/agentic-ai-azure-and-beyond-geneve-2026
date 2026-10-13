@@ -10,8 +10,14 @@
 
   Ce script :
     1. donne à l'identité de l'équipe IA l'accès aux états teams/<équipe>.tfstate, et à
-       eux seuls (condition ABAC sur le chemin du blob) : l'état de la plateforme, qui
-       contient le kubeconfig admin et les secrets des applications Entra, lui reste fermé ;
+       eux seuls : rôle personnalisé « Agentic - etats Terraform des equipes » (actions de
+       données sur les blobs, aucune action de gestion : le conteneur ne peut pas être
+       supprimé), attribué sur le conteneur tfstate sous condition ABAC (chemin et préfixe
+       de liste teams/). L'état de la plateforme, qui contient le kubeconfig admin et les
+       secrets des applications Entra, lui reste fermé ;
+       1 ter. si Terraform ne les pose pas (ai_team_manage_role_assignments = false, apply
+       en CI) : ses rôles Azure — Contributor sur rg-<base>-equipes, RBAC Administrator
+       sous condition. Ce script tourne alors avec VOS droits (Owner) ;
     2. crée l'environnement GitHub « ai-team », avec VOUS comme approbateur ;
     3. pose les variables du dépôt (identité, tenant, abonnement, état Terraform, et
        PLATEFORME : les sorties non sensibles de la plateforme, terraform output
@@ -22,8 +28,11 @@
     5. si ce dépôt est privé : autorise les dépôts du même propriétaire à appeler ses
        workflows réutilisables (agent-image.yml, agent-deploy.yml).
 
-  Jeton GitHub (fine-grained, propriétaire = celui des dépôts d'équipes) :
-  Administration, Contents, Workflows et Variables en écriture, « All repositories ».
+  Jeton GitHub (fine-grained, propriétaire = celui des dépôts d'équipes), « All
+  repositories », en lecture et écriture : Administration, Contents, Workflows, Variables
+  et Actions — Actions sert à fixer le sujet OIDC du dépôt de l'équipe
+  (PUT /repos/<owner>/<dépôt>/actions/oidc/customization/sub) ; sans lui, Agent Ready
+  échoue sur github_actions_repository_oidc_subject_claim_customization_template.
 
 .EXAMPLE
   $env:AI_TEAM_GITHUB_TOKEN = "<jeton>"; ./demos/B-agent-equipe/prepare.ps1
@@ -53,19 +62,101 @@ try {
   Step "1 · Accès de l'équipe IA aux états teams/ — et à eux seuls"
   $saId = az storage account show -n $stateAccount -g $stateRg --query id -o tsv
   if ($LASTEXITCODE -ne 0 -or -not $saId) { throw "compte d'état $stateAccount introuvable" }
-  # Lire, écrire, supprimer un blob : seulement sous teams/ (conteneur tfstate). Le
-  # reste du compte — l'état de la plateforme en premier — est hors d'atteinte.
-  # VÉRIFIER (D-7) : terraform init / plan / apply d'une équipe passent avec cette condition.
+  $containerScope = "$saId/blobServices/default/containers/tfstate"
   $blob = "Microsoft.Storage/storageAccounts/blobServices/containers/blobs"
-  $condition = "((!(ActionMatches{'$blob/read'}) AND !(ActionMatches{'$blob/write'}) AND !(ActionMatches{'$blob/delete'}) AND !(ActionMatches{'$blob/add/action'})) OR (@Resource[Microsoft.Storage/storageAccounts/blobServices/containers:name] StringEquals 'tfstate' AND @Resource[$($blob):path] StringStartsWith 'teams/'))"
-  # Une attribution sans condition (version précédente de ce script) l'emporterait : on la retire.
-  $old = @(az role assignment list --assignee $principalId --scope $saId --role "Storage Blob Data Contributor" --query "[?condition==null].id" -o tsv)
-  foreach ($id in $old) { if ($id) { Invoke-Native { az role assignment delete --ids $id -o none } "retrait de l'accès sans condition" } }
-  $existing = az role assignment list --assignee $principalId --scope $saId --role "Storage Blob Data Contributor" --query "[?condition!=null].id" -o tsv
-  if (-not $existing) {
-    Invoke-Native { az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role "Storage Blob Data Contributor" --scope $saId --condition $condition --condition-version "2.0" -o none } "rôle sur les états teams/"
+
+  # Rôle personnalisé : les actions de données sur les blobs, et rien d'autre. Storage Blob
+  # Data Contributor contient aussi des actions de gestion (containers/delete…) qu'aucune
+  # condition sur les blobs ne couvre : avec lui, l'identité supprimait le conteneur tfstate.
+  $roleName = "Agentic - etats Terraform des equipes"
+  $roleDef = [ordered]@{
+    Name             = $roleName
+    IsCustom         = $true
+    Description      = "Lire, écrire, supprimer les états Terraform des équipes (blobs). Aucune action de gestion."
+    Actions          = @()
+    NotActions       = @()
+    DataActions      = @("$blob/read", "$blob/write", "$blob/delete", "$blob/add/action")
+    NotDataActions   = @()
+    AssignableScopes = @("/subscriptions/$subscription")
   }
-  Ok "Storage Blob Data Contributor sur $stateAccount, sous condition : tfstate/teams/* seulement"
+  $roleId = az role definition list --name $roleName --custom-role-only true --query "[0].name" -o tsv
+  $roleFile = [IO.Path]::GetTempFileName()
+  try {
+    # VÉRIFIER (D-7) : az role definition update accepte ce JSON (Id = nom GUID du rôle).
+    if ($roleId) { $roleDef["Id"] = $roleId }
+    [IO.File]::WriteAllText($roleFile, ($roleDef | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+    if ($roleId) {
+      Invoke-Native { az role definition update --role-definition "@$roleFile" -o none } "mise à jour du rôle $roleName"
+    } else {
+      Invoke-Native { az role definition create --role-definition "@$roleFile" -o none } "création du rôle $roleName"
+    }
+  } finally { Remove-Item $roleFile -ErrorAction SilentlyContinue }
+
+  # Condition (Microsoft Learn, « Example: Read or list blobs in named containers with a
+  # path ») : lire, écrire, ajouter, supprimer un blob sous teams/ ; lister seulement avec
+  # un préfixe teams/ (terraform init : Workspaces() liste « teams/<équipe>.tfstateenv: »).
+  # Sans la branche Blob.List, une liste n'a pas d'attribut path : 403 à terraform init.
+  # VÉRIFIER (D-7) : terraform init / plan / apply / destroy d'une équipe passent, et
+  # « az storage blob list -c tfstate --account-name <compte> --auth-mode login » (sans
+  # préfixe) est refusé avec l'identité de l'équipe IA.
+  $cont = "@Resource[Microsoft.Storage/storageAccounts/blobServices/containers:name] StringEquals 'tfstate'"
+  $condition = @(
+    "((!(ActionMatches{'$blob/read'} AND NOT SubOperationMatches{'Blob.List'}) AND !(ActionMatches{'$blob/write'}) AND !(ActionMatches{'$blob/delete'}) AND !(ActionMatches{'$blob/add/action'}))",
+    "OR ($cont AND @Resource[$($blob):path] StringStartsWith 'teams/'))",
+    "AND ((!(ActionMatches{'$blob/read'} AND SubOperationMatches{'Blob.List'}))",
+    "OR ($cont AND @Request[$($blob):prefix] StringStartsWith 'teams/'))"
+  ) -join " "
+
+  # Les attributions des versions précédentes de ce script (Storage Blob Data Contributor
+  # sur tout le compte, avec ou sans condition) : retirées.
+  $old = @(az role assignment list --assignee $principalId --scope $saId --role "Storage Blob Data Contributor" --query "[].id" -o tsv)
+  foreach ($id in $old) { if ($id) { Invoke-Native { az role assignment delete --ids $id -o none } "retrait de Storage Blob Data Contributor sur le compte" } }
+
+  # Sur le conteneur : garder l'attribution dont la condition est exactement la bonne.
+  $current = ((az role assignment list --assignee $principalId --scope $containerScope --role $roleName --query "[].{id:id, c:condition}" -o json) -join "`n") | ConvertFrom-Json
+  $keep = $null
+  foreach ($a in @($current)) {
+    if (-not $a) { continue }
+    if (-not $keep -and $a.c -eq $condition) { $keep = $a.id }
+    else { Invoke-Native { az role assignment delete --ids $a.id -o none } "retrait d'une attribution périmée" }
+  }
+  if (-not $keep) {
+    # Un rôle personnalisé tout juste créé met quelques secondes à être attribuable.
+    $assigned = $false
+    for ($i = 1; $i -le 12 -and -not $assigned; $i++) {
+      $assigned = Test-Native { az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role $roleName --scope $containerScope --condition $condition --condition-version "2.0" -o none }
+      if (-not $assigned) { Info "propagation du rôle personnalisé ($i/12)…"; Start-Sleep -Seconds 10 }
+    }
+    if (-not $assigned) { throw "attribution de « $roleName » sur $containerScope refusée" }
+  }
+  Ok "« $roleName » sur $stateAccount/tfstate, sous condition : teams/* seulement"
+
+  Step "1 ter · Rôles Azure de l'identité de l'équipe IA"
+  $ra = ((terraform "-chdir=$($script:TfDir)" output -json ai_team_role_assignments) -join "") | ConvertFrom-Json
+  if (-not $ra) { throw "sortie ai_team_role_assignments vide : relancer ./scripts/deploy.ps1" }
+  if ($ra.managed_by_terraform) {
+    Ok "posés par Terraform (ai_team_manage_role_assignments = true)"
+  } else {
+    # L'apply en CI ne peut pas attribuer Contributor ni RBAC Administrator (il pourrait
+    # sinon se rendre Owner) : vous les posez, une fois, avec vos droits d'Owner.
+    $contrib = az role assignment list --assignee $principalId --scope $ra.contributor_scope --role "Contributor" --query "[0].id" -o tsv
+    if (-not $contrib) {
+      Invoke-Native { az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role "Contributor" --scope $ra.contributor_scope -o none } "Contributor sur rg-…-equipes"
+    }
+    foreach ($scope in @($ra.delegation_scopes)) {
+      $current = ((az role assignment list --assignee $principalId --scope $scope --role "Role Based Access Control Administrator" --query "[].{id:id, c:condition}" -o json) -join "`n") | ConvertFrom-Json
+      $keep = $null
+      foreach ($a in @($current)) {
+        if (-not $a) { continue }
+        if (-not $keep -and $a.c -eq $ra.condition) { $keep = $a.id }
+        else { Invoke-Native { az role assignment delete --ids $a.id -o none } "retrait d'un RBAC Administrator périmé" }
+      }
+      if (-not $keep) {
+        Invoke-Native { az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role "Role Based Access Control Administrator" --scope $scope --condition $ra.condition --condition-version "2.0" -o none } "RBAC Administrator sous condition sur $scope"
+      }
+    }
+    Ok "Contributor sur rg-…-equipes, RBAC Administrator sous condition sur $(@($ra.delegation_scopes).Count) portées"
+  }
 
   Step "1 bis · Le périmètre d'admission refuse ce qu'il doit refuser"
   # --dry-run=server : la politique agent-ready-perimetre est évaluée, rien n'est créé.

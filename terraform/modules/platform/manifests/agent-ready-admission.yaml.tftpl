@@ -12,7 +12,8 @@
 #   - RoleBindings : vers agentic-team-deployer seulement, pour UN utilisateur
 #     (l'identité du pipeline de l'équipe), jamais le pipeline lui-même, un
 #     groupe ou un compte system: ;
-#   - quotas, limites, RoleBindings, Secrets : dans un namespace Agent Ready ;
+#   - quotas, limites, NetworkPolicies, RoleBindings, Secrets : dans un
+#     namespace Agent Ready ;
 #   - Secrets dans agentgateway-system : vk-*, labels agentic.io/virtual-key
 #     et agentic.io/agent-ready (les clés de la plateforme restent hors d'atteinte).
 # ---------------------------------------------------------------------------
@@ -32,6 +33,10 @@ spec:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["rolebindings"]
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["networkpolicies"]
   matchConditions:
     - name: pipeline-agent-ready
       expression: request.userInfo.username == '${principal_id}'
@@ -80,7 +85,7 @@ spec:
       message: "Secret hors périmètre : namespace Agent Ready, ou clé virtuelle vk-<équipe> créée par Agent Ready"
     - expression: >-
         request.resource.resource in ['namespaces', 'secrets'] || variables.equipe
-      message: "quota, limites et RoleBinding : uniquement dans un namespace Agent Ready"
+      message: "quota, limites, NetworkPolicy et RoleBinding : uniquement dans un namespace Agent Ready"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

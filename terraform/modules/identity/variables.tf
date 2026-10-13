@@ -30,7 +30,13 @@ variable "public_hosts" {
 }
 
 variable "authorized_principal_object_ids" {
-  description = "Entra ID users or groups (object IDs) allowed to sign in to the gateway API, LibreChat and the portal, besides the identity running Terraform."
+  description = "Entra ID users or groups (object IDs) allowed to sign in to the gateway API, LibreChat and the portal, besides the identity running Terraform (assign_current_principal)."
   type        = list(string)
   default     = []
+}
+
+variable "assign_current_principal" {
+  description = "Add the identity running Terraform to the people allowed to sign in. false in CI (see the root variable)."
+  type        = bool
+  default     = true
 }

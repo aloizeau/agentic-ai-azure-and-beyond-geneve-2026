@@ -55,7 +55,7 @@ metadata:
   name: mcp-equipes
 spec:
   mcp:
-    prefixMode: Always   # docs-equipe-docs_rechercher : on voit quelle équipe sert l'outil
+    prefixMode: Always   # <cible>_rechercher (cible préfixée par le namespace) : on voit quelle équipe sert l'outil
     failureMode: FailOpen   # le serveur en panne d'UNE équipe ne coupe pas les outils des autres
     targets:
       - name: equipes

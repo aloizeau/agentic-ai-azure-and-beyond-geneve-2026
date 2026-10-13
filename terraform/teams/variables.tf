@@ -5,7 +5,11 @@ variable "equipe" {
   validation {
     condition = (
       can(regex("^[a-z][a-z0-9-]{1,18}[a-z0-9]$", var.equipe)) && !strcontains(var.equipe, "--") &&
-      !contains(["default", "kagent", "monitoring", "librechat", "agentregistry", "platform", "plateforme"], var.equipe) &&
+      # Same list as noms_reserves (modules/platform/teams.tf), which the
+      # admission policy enforces anyway.
+      !contains(["default", "kagent", "monitoring", "librechat", "agentregistry", "platform", "plateforme",
+        "outils-entreprise", "models", "cert-manager", "jetons-github", "gatekeeper-system",
+      "app-routing-system", "aks-command", "calico-system", "tigera-operator"], var.equipe) &&
       !startswith(var.equipe, "kube-") && !startswith(var.equipe, "agentgateway")
     )
     error_message = "3 to 20 characters, lowercase letters, digits and dashes, starting with a letter; platform names are reserved."

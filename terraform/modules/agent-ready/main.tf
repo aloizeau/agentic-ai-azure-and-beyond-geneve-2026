@@ -11,6 +11,16 @@
 #       Azure role assignment management to others with conditions",
 #       example "Constrain roles and principal types").
 #   Kubernetes rights of that identity: modules/platform/teams.tf.
+#
+# Who assigns those two roles (var.manage_role_assignments):
+#   true   Terraform, run by a person with Owner (./scripts/deploy.ps1 on the
+#          presenter's workstation);
+#   false  the CI apply identity (scripts/bootstrap-state.sh) may not hand out
+#          Contributor or RBAC Administrator — that would let it make itself
+#          Owner. Terraform then leaves them alone and a person with Owner
+#          creates them once: demos/B-agent-equipe/prepare.ps1 (step 1 ter),
+#          from the output ai_team_role_assignments.
+
 # -----------------------------------------------------------------------------
 
 data "azurerm_client_config" "current" {}
@@ -101,7 +111,7 @@ resource "azurerm_federated_identity_credential" "ai_team" {
 }
 
 resource "azurerm_role_assignment" "ai_team_contributor" {
-  count              = local.pipeline_on ? 1 : 0
+  count              = local.pipeline_on && var.manage_role_assignments ? 1 : 0
   scope              = azurerm_resource_group.equipes.id
   role_definition_id = local.role_def.contributor
   principal_id       = azurerm_user_assigned_identity.ai_team[0].principal_id
@@ -109,7 +119,7 @@ resource "azurerm_role_assignment" "ai_team_contributor" {
 }
 
 resource "azurerm_role_assignment" "ai_team_delegation" {
-  for_each = local.delegation_scopes
+  for_each = var.manage_role_assignments ? local.delegation_scopes : {}
 
   scope              = each.value
   role_definition_id = local.role_def.rbac_administrator

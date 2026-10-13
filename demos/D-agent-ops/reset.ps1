@@ -15,6 +15,9 @@
 #>
 [CmdletBinding()]
 param(
+  # Même validation que run.ps1 : le nom part dans des commandes (namespace, dépôt).
+  # -cmatch et \A…\z : ni majuscules, ni retour à la ligne final (« $ » l'accepte).
+  [ValidateScript({ $_ -cmatch '\A[a-z][a-z0-9-]{1,18}[a-z0-9]\z' })]
   [string]$Equipe = "equipe-ops",
   [switch]$Local,
   [switch]$Plateforme
@@ -36,6 +39,10 @@ $objects = @(
   @("agentgateway-system", "httproute/mcp-entreprise-agents"),
   @("agentgateway-system", "agentgatewaypolicy/acces-agents-outils"),
   @("agentgateway-system", "agentgatewaypolicy/outils-entreprise-autorises"),
+  # Ancienne liste NOIRE sur mcp-equipes (avant l'audit d'octobre 2026) : deux
+  # politiques Allow sur le même backend s'additionnent (OU) et contournent la
+  # liste blanche outils-equipes-autorises. kubectl apply -k n'élague rien.
+  @("agentgateway-system", "agentgatewaypolicy/outils-equipes-lecture"),
   @("agentgateway-system", "agentgatewaybackend/mcp-entreprise-agents")
 )
 foreach ($o in $objects) {
@@ -44,6 +51,7 @@ foreach ($o in $objects) {
 # L'émetteur de jetons et la clé de l'application GitHub (namespace jetons-github).
 Invoke-Native { kubectl delete namespace jetons-github --ignore-not-found --wait=false } "kubectl delete namespace jetons-github"
 Invoke-Native { kubectl delete clusterrolebinding,clusterrole emetteur-jetons-github --ignore-not-found } "RBAC de l'émetteur"
+Invoke-Native { kubectl delete validatingadmissionpolicybinding,validatingadmissionpolicy emetteur-jetons-github-equipes-seulement --ignore-not-found } "admission de l'émetteur"
 Ok "objets Kubernetes supprimés"
 
 $rg = Get-TfOutput "resource_group_name"

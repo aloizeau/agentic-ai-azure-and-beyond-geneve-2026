@@ -47,7 +47,11 @@ def kube(namespaces, secrets, patches):
             assert name == "github-token"
             if ns not in secrets:
                 return httpx.Response(404)
-            patches[ns] = base64.b64decode(json.loads(req.content)["data"]["token"]).decode()
+            data = json.loads(req.content)["data"]
+            assert set(data) == {"token", "app-id"}, data
+            # L'identifiant de l'application accompagne le jeton : tickets.py n'accepte que ses issues.
+            assert base64.b64decode(data["app-id"]).decode() == "4242"
+            patches[ns] = base64.b64decode(data["token"]).decode()
             return httpx.Response(200, json={})
         return httpx.Response(405)
     return issuer.Kube(httpx.Client(base_url="https://k8s", transport=httpx.MockTransport(handler)))
@@ -100,4 +104,10 @@ def test_une_equipe_en_echec_n_arrete_pas_les_autres():
 def test_main_refuse_un_owner_invalide(monkeypatch):
     monkeypatch.setenv("GITHUB_OWNER", "contoso/plateforme")
     monkeypatch.setenv("GITHUB_APP_ID", "1")
+    assert issuer.main() == 2
+
+
+def test_main_refuse_un_app_id_non_numerique(monkeypatch):
+    monkeypatch.setenv("GITHUB_OWNER", "contoso")
+    monkeypatch.setenv("GITHUB_APP_ID", "Iv1.0123456789abcdef")
     assert issuer.main() == 2

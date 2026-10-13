@@ -122,7 +122,16 @@ class MicroserviceBackend:
             return Verdict.PASSED
         if st in cls._BLOCKED:
             return Verdict.BLOCKED
-        raise ValueError(f"unexpected guardrail status {raw!r} for {where}")
+        # « skipped » (rail non exécuté) ou statut absent : on ne sait pas si le
+        # contrôle a eu lieu, donc panne moteur -> FAIL_MODE (fermé par défaut).
+        # Message explicite : sans lui, un refus systématique en mode
+        # microservice ressemble à une panne réseau. VÉRIFIER (D-7) : valeurs
+        # réelles de `status` sur une instance NVIDIA sous licence.
+        kind = "missing" if raw is None or st == "" else ("skipped" if st == "skipped" else "unknown")
+        log.error("microservice guardrail status %s (%r) for %s: treated as an engine failure, "
+                  "FAIL_MODE applies (closed => request refused). Extend _PASSED/_BLOCKED only "
+                  "after checking the microservice semantics.", kind, raw, where)
+        raise ValueError(f"unexpected guardrail status {raw!r} ({kind}) for {where}")
 
     async def check(self, profile: str, messages: list[dict], direction: Direction) -> CheckResult:
         payload = {"model": self._model, "messages": messages, "guardrails": {"config_id": profile}}

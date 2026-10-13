@@ -9,7 +9,9 @@ passage (CronJob, toutes les 30 minutes) et pour chaque namespace d'équipe
     pourrait écrire ;
   - avec issues:write et metadata:read, rien d'autre ;
 et l'écrit dans le Secret github-token de ce namespace (créé vide par Agent
-Ready). Ses droits Kubernetes : lister les namespaces, lire et modifier les
+Ready), avec l'identifiant de l'application (clé app-id, une donnée publique) :
+le serveur MCP de l'équipe ne commente que les issues créées par CETTE
+application, pas par une autre (github-actions…). Ses droits Kubernetes : lister les namespaces, lire et modifier les
 Secrets nommés github-token. Il ne crée rien et ne lit aucun autre Secret.
 """
 from __future__ import annotations
@@ -54,11 +56,13 @@ class Kube:
         r.raise_for_status()
         return sorted(ns["metadata"]["name"] for ns in r.json()["items"])
 
-    def ecrire_jeton(self, namespace: str, jeton: str) -> bool:
+    def ecrire_jeton(self, namespace: str, jeton: str, app_id: str) -> bool:
         """Modifie le Secret existant ; False s'il n'existe pas (Agent Ready pas encore passé)."""
+        def b64(v: str) -> str:
+            return base64.b64encode(v.encode()).decode()
         r = self.http.patch(
             f"/api/v1/namespaces/{namespace}/secrets/{SECRET}",
-            json={"data": {"token": base64.b64encode(jeton.encode()).decode()}},
+            json={"data": {"token": b64(jeton), "app-id": b64(app_id)}},
             headers={"Content-Type": "application/merge-patch+json"},
         )
         if r.status_code == 404:
@@ -104,7 +108,7 @@ def passage(kube: Kube, app: GitHubApp, owner: str) -> int:
             if jeton is None:
                 log.warning("%s/%s : application non installée, pas de jeton", owner, depot)
                 continue
-            if kube.ecrire_jeton(equipe, jeton):
+            if kube.ecrire_jeton(equipe, jeton, app.app_id):
                 log.info("%s : jeton écrit pour %s/%s (%s)", equipe, owner, depot, ", ".join(f"{k}:{v}" for k, v in PERMISSIONS.items()))
             else:
                 log.warning("%s : Secret %s absent, rien écrit", equipe, SECRET)
@@ -120,7 +124,13 @@ def main() -> int:
     if not re.fullmatch(r"[A-Za-z0-9-]{1,39}", owner):
         log.error("GITHUB_OWNER invalide : %r", owner)
         return 2
-    app = GitHubApp(os.environ["GITHUB_APP_ID"],
+    app_id = os.environ["GITHUB_APP_ID"].strip()
+    if not app_id.isdigit():
+        # L'identifiant numérique (pas le Client ID Iv1.…) : c'est lui que GitHub
+        # renvoie dans performed_via_github_app.id, et que tickets.py compare.
+        log.error("GITHUB_APP_ID invalide : %r (identifiant numérique attendu)", app_id)
+        return 2
+    app = GitHubApp(app_id,
                     Path(os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH", "/var/run/github-app/private-key")).read_text())
     return 1 if passage(Kube.dans_le_cluster(), app, owner) else 0
 

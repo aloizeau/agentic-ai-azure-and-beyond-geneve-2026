@@ -1,8 +1,11 @@
 # Les tickets GitHub du serveur MCP de l'équipe : le dépôt cible, et le jeton
 # que l'émetteur de la plateforme (tools/github-token-issuer) écrit dans le
 # Secret github-token toutes les 30 minutes — valable une heure, pour CE dépôt
-# et issues:write seulement. La clé privée de l'application GitHub n'est
-# jamais dans ce namespace.
+# et issues:write seulement, avec l'identifiant de l'application (app-id) qui
+# permet de reconnaître les issues de l'agent. La clé privée de l'application
+# GitHub n'est jamais dans ce namespace.
+# Patch stratégique : securityContext du pod est fusionné avec celui du modèle
+# (runAsNonRoot, seccompProfile conservés), fsGroup s'y ajoute.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,11 +13,17 @@ metadata:
 spec:
   template:
     spec:
+      securityContext:
+        # Les fichiers du Secret monté appartiennent à root : fsGroup leur donne
+        # le groupe 65532 (USER 65532:65532 de l'image) et defaultMode 0440 la
+        # lecture au groupe. Sans lui, tickets.py échoue en PermissionError.
+        fsGroup: 65532
       containers:
         - name: docs-mcp
           env:
             - { name: GITHUB_REPOSITORY, value: __GITHUB_REPO__ }   # le dépôt de l'équipe, et lui seul
             - { name: GITHUB_TOKEN_PATH, value: /var/run/github/token }
+            - { name: GITHUB_APP_ID_PATH, value: /var/run/github/app-id }  # seules ses issues sont commentées
             - { name: TICKETS_MAX_CREATIONS, value: "5" }          # par fenêtre de 10 min
             - { name: TICKETS_MAX_COMMENTAIRES, value: "10" }
           volumeMounts:
@@ -24,6 +33,6 @@ spec:
         - name: github-token
           secret:
             secretName: github-token
-            items: [{ key: token, path: token }]
+            items: [{ key: token, path: token }, { key: app-id, path: app-id }]
             optional: true          # vide tant que l'émetteur n'est pas passé
             defaultMode: 0440

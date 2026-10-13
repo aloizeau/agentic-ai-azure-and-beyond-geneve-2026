@@ -10,7 +10,7 @@ terraform init -backend-config=backend.hcl
 time make up            # phase 1, kubectl credentials, phase 2
 make cost
 kubectl get pods -A | grep -E 'agentgateway|kagent|librechat|kps'
-kubectl -n librechat port-forward svc/librechat 3080:3080   # then sign in, ask the k8s-agent a question
+kubectl -n librechat port-forward svc/librechat 3080:3080   # then sign in, ask a question (agents are reachable only if listed in gateway/deploy/autorisations-mcp.yaml)
 ```
 
 ## Narrate over it

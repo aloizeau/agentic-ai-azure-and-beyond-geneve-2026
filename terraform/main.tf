@@ -38,6 +38,7 @@ module "agent_ready" {
   aks_id                    = module.foundation.cluster_id
   aks_oidc_issuer_url       = module.foundation.oidc_issuer_url
   ai_team_github_repository = var.ai_team_github_repository
+  manage_role_assignments   = var.ai_team_manage_role_assignments
 }
 
 module "ai" {
@@ -98,6 +99,7 @@ module "identity" {
 
   create_entra_apps               = var.create_entra_apps
   authorized_principal_object_ids = var.authorized_principal_object_ids
+  assign_current_principal        = var.assign_current_principal
   public_hostname                 = try(local.public_hosts.chat, null)
   public_hosts                    = local.public_hosts
 }

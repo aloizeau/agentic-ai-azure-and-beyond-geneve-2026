@@ -43,12 +43,24 @@ class Settings:
     # Taille maximale d'un corps de requête (octets), refusée en 413 avant tout
     # parsing JSON : un corps géant ne doit pas épuiser la mémoire du pod.
     max_body_bytes: int = field(default_factory=lambda: int(_env("MAX_BODY_BYTES", str(1024 * 1024))))
+    # Rails appliqués aux messages non-`assistant` qui suivent le dernier
+    # message user (résultats d'outils MCP : docs Learn, sorties Azure…).
+    # secrets -> motifs de secrets uniquement, en Python dans l'adaptateur
+    #            (pas de motifs PII : versions, IP, dates d'une doc ne sont pas
+    #            une fuite de données personnelles ; pas d'appel LLM : avec le
+    #            profil strict, un self check par résultat d'outil sous le
+    #            timeout gateway de 3 s faisait refuser les requêtes multi-outils)
+    # profile -> secrets + carte bancaire + rails d'entrée complets du profil (PII, self check
+    #            LLM contre l'injection indirecte), lancés en parallèle.
+    tool_rails: str = field(default_factory=lambda: _env("TOOL_RAILS", "secrets"))
 
     def validate(self) -> "Settings":
         if self.max_body_bytes <= 0:
             raise ValueError(f"MAX_BODY_BYTES must be > 0, got {self.max_body_bytes}")
         if self.backend not in {"library", "microservice"}:
             raise ValueError(f"BACKEND must be 'library' or 'microservice', got {self.backend!r}")
+        if self.tool_rails not in {"secrets", "profile"}:
+            raise ValueError(f"TOOL_RAILS must be 'secrets' or 'profile', got {self.tool_rails!r}")
         if self.fail_mode not in {"closed", "open"}:
             raise ValueError(f"FAIL_MODE must be 'closed' or 'open', got {self.fail_mode!r}")
         return self

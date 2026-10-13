@@ -28,12 +28,17 @@ resource "terraform_data" "enterprise_tools" {
     command = "kubectl apply -k ../tools/enterprise/deploy"
   }
 
-  # Turning the flag off removes pods, backends and routes. Destroy-time
-  # provisioners take a literal command (no locals); cwd is the terraform root.
+  # Turning the flag off removes pods, backends and routes — but NOT the
+  # namespace outils-entreprise: it is shared (démo D deploys azure-mcp in it),
+  # and deleting it would take démo D's objects and Secrets with it. Hence the
+  # files one by one, namespace.yaml left out (`delete -k` would delete it).
+  # Keep this list in step with tools/enterprise/deploy/kustomization.yaml.
+  # Destroy-time provisioners take a literal command (no locals); cwd is the
+  # terraform root.
   provisioner "local-exec" {
     when       = destroy
     on_failure = continue
-    command    = "kubectl delete -k ../tools/enterprise/deploy --ignore-not-found --wait=false"
+    command    = "kubectl delete -f ../tools/enterprise/deploy/gateway.yaml -f ../tools/enterprise/deploy/network-policies.yaml -f ../tools/enterprise/deploy/workloads.yaml --ignore-not-found --wait=false"
   }
 
   depends_on = [terraform_data.gateway_core] # Gateway agentgateway-proxy (parentRef) + acces-outils

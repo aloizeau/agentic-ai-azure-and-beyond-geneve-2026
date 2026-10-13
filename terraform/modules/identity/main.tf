@@ -116,15 +116,29 @@ resource "azuread_service_principal" "gateway_api" {
   # LibreChat as well as with the Azure CLI above. Without this, every account
   # of the tenant, guests included, can call the models (and the public API).
   app_role_assignment_required = true
+
+  lifecycle {
+    # Assignment required on every people-facing app: an empty list of allowed
+    # principals would lock everybody out, presenter included.
+    precondition {
+      condition     = length(local.authorized_principals) > 0
+      error_message = "Nobody could sign in: with assign_current_principal = false, authorized_principal_object_ids needs at least one user or group."
+    }
+  }
 }
 
 locals {
   librechat_host = coalesce(var.public_hostname, "librechat.localtest.me")
 
   # Who may sign in: the identity running Terraform (the presenter on a
-  # workstation) plus the users or groups of var.authorized_principal_object_ids,
-  # on every app that faces people (gateway API, LibreChat, portal).
-  authorized_principals = toset(concat([data.azuread_client_config.current.object_id], var.authorized_principal_object_ids))
+  # workstation, unless assign_current_principal = false — CI) plus the users
+  # or groups of var.authorized_principal_object_ids, on every app that faces
+  # people (gateway API, LibreChat, portal). Stable keys: a CI apply and a
+  # workstation apply must compute the same set, or each removes the other's.
+  authorized_principals = toset(concat(
+    var.assign_current_principal ? [data.azuread_client_config.current.object_id] : [],
+    var.authorized_principal_object_ids,
+  ))
   people_apps = merge(
     var.create_entra_apps ? {
       gateway_api = azuread_service_principal.gateway_api[0].object_id

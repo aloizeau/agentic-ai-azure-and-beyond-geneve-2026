@@ -31,7 +31,7 @@ spec:
         static:
           host: mcp-azure.outils-entreprise.svc.cluster.local
           port: 9000
-          path: /mcp
+          path: /           # VÉRIFIER (D-7) : chemin MCP du serveur Azure en HTTP (comme la démo D)
           protocol: StreamableHTTP
 ---
 apiVersion: agentgateway.dev/v1alpha1
@@ -85,10 +85,17 @@ spec:
       backendRefs: [{ group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-graph }]
       timeouts: { request: 60s }
 ---
-# Azure : lecture seule côté serveur (--read-only, 4 domaines) ET liste blanche
-# côté passerelle — si un flag saute à une mise à jour, la passerelle tient.
-# Mode namespace : un outil par domaine (aks, group, monitor, resourcehealth) ;
-# les formes <domaine>_* / azmcp_<domaine>_* couvrent le mode « all ».
+# Azure : deux barrières indépendantes, sur la COMMANDE elle-même.
+#   - serveur : --read-only, 4 domaines, mode « all » (workloads.yaml) : un outil
+#     MCP = une commande (aks_cluster_get, monitor_metrics_query…) ;
+#   - passerelle : seulement les outils de ces 4 domaines dont le nom finit par
+#     un verbe de lecture (list, get, show, query).
+# En mode « namespace », un outil par domaine (aks, monitor…) recevrait la
+# commande en argument : un filtre sur le nom d'outil ne bornerait aucune
+# sous-commande. C'est pourquoi les noms de domaine nus (aks, group…) ne sont
+# PAS ouverts : si le serveur repassait en mode « namespace », Azure
+# disparaîtrait du tools/list (fermé par défaut) au lieu de tout ouvrir.
+# Forme azmcp_<domaine>_* : noms des anciennes versions.
 # VÉRIFIER (D-7) : noms réels avec tools/list sur la version épinglée.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -104,9 +111,7 @@ spec:
         action: Allow
         policy:
           matchExpressions:
-            - 'mcp.tool.name in ["aks", "group", "monitor", "resourcehealth"]'
-            - 'mcp.tool.name.startsWith("aks_") || mcp.tool.name.startsWith("group_") || mcp.tool.name.startsWith("monitor_") || mcp.tool.name.startsWith("resourcehealth_")'
-            - 'mcp.tool.name.startsWith("azmcp_aks_") || mcp.tool.name.startsWith("azmcp_group_") || mcp.tool.name.startsWith("azmcp_monitor_") || mcp.tool.name.startsWith("azmcp_resourcehealth_")'
+            - 'mcp.tool.name.matches("^(azmcp_)?(aks|group|monitor|resourcehealth)_([a-z0-9-]+_)*(list|get|show|query)$")'
 ---
 # Graph / M365 : identifiants app-only = chaque personne voit ce que l'APP voit
 # (voir l'avertissement sur le Deployment mcp-graph). Cette liste ne garde que

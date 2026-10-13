@@ -252,12 +252,25 @@ variable "authorized_principal_object_ids" {
   description = <<-EOT
     Entra ID users or groups (object IDs) allowed to sign in: gateway API (models,
     tools, the Azure CLI token of the demos), LibreChat and the portal in front of
-    Grafana and the kagent UI. The identity running Terraform is always allowed.
-    Every one of these apps requires an assignment: the rest of the tenant,
-    guests included, is refused by Entra ID.
+    Grafana and the kagent UI. The identity running Terraform is added too, unless
+    assign_current_principal = false. Every one of these apps requires an
+    assignment: the rest of the tenant, guests included, is refused by Entra ID.
   EOT
   type        = list(string)
   default     = []
+}
+
+variable "assign_current_principal" {
+  description = <<-EOT
+    Allow the identity running Terraform to sign in (app role assignment on the
+    gateway API, LibreChat and the portal). true: the presenter's workstation.
+    false in CI: the CI identity is not a person, and the assignments would
+    change with whoever runs the apply (a CI apply would remove the presenter's
+    — AADSTS50105). With false, put the presenter (or a group) in
+    authorized_principal_object_ids: it must not be empty.
+  EOT
+  type        = bool
+  default     = true
 }
 
 variable "create_entra_apps" {
@@ -384,6 +397,22 @@ variable "ai_team_github_repository" {
   EOT
   type        = string
   default     = null
+}
+
+variable "ai_team_manage_role_assignments" {
+  description = <<-EOT
+    Who gives the AI team identity its Azure roles (Contributor on
+    rg-<base>-equipes, RBAC Administrator under an ABAC condition).
+    true: Terraform — a person with Owner runs it (./scripts/deploy.ps1).
+    false: the CI apply identity, which may not hand out these two roles
+    (scripts/bootstrap-state.sh), leaves them alone; a person with Owner
+    creates them once with demos/B-agent-equipe/prepare.ps1 (output
+    ai_team_role_assignments). Switching an existing state to false: first
+    `terraform state rm` the two module.agent_ready role assignments, or the
+    apply tries to delete them.
+  EOT
+  type        = bool
+  default     = true
 }
 
 # -----------------------------------------------------------------------------

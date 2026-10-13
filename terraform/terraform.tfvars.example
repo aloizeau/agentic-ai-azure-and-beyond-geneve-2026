@@ -21,8 +21,20 @@ enable_enterprise_tools = false
 usage_metrics_per_user = true
 
 # Who may sign in (gateway API, LibreChat, portal): users or groups, object IDs.
-# The identity running Terraform is always allowed; nobody else by default.
+# The identity running Terraform is allowed too (assign_current_principal);
+# nobody else by default.
 # authorized_principal_object_ids = ["<group object ID>"]
+# In CI (TF_VAR_assign_current_principal=false): the CI identity is not added,
+# and authorized_principal_object_ids must hold the presenter or a group.
+# assign_current_principal = true
+
+# « Agent Ready » (démo B): owner/repo of this repository, for the AI team's
+# pipeline identity. Its two Azure roles (Contributor on rg-<base>-equipes, RBAC
+# Administrator under condition) are assigned by Terraform when run with Owner
+# (true, ./scripts/deploy.ps1); in CI set false, then run
+# demos/B-agent-equipe/prepare.ps1 once as Owner.
+# ai_team_github_repository       = "<owner>/<repo>"
+# ai_team_manage_role_assignments = true
 
 # Public exposure (optional): LibreChat, Grafana, kagent UI and the LLM API on
 # https://demos.<zone> and https://*.demos.<zone>, Let's Encrypt certificates,

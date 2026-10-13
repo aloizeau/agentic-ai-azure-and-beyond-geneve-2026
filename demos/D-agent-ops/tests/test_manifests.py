@@ -57,6 +57,31 @@ def test_patch_vise_le_deploiement_du_modele():
     # Le pod monte le jeton émis par la plateforme, jamais la clé de l'application.
     volumes = patch["spec"]["template"]["spec"]["volumes"]
     assert [v["secret"]["secretName"] for v in volumes] == ["github-token"]
+    # Le jeton et l'identifiant de l'application (écrits par l'émetteur), rien d'autre.
+    assert [i["key"] for i in volumes[0]["secret"]["items"]] == ["token", "app-id"]
+    assert {"GITHUB_APP_ID_PATH"} <= env
+
+
+def _lisible_par_le_groupe(pod_spec, volume):
+    """UID 65532 non root : le Secret monté (root:fsGroup) doit être lisible par le groupe 65532."""
+    assert pod_spec["securityContext"]["fsGroup"] == 65532
+    mode = next(v for v in pod_spec["volumes"] if v["name"] == volume)["secret"]["defaultMode"]
+    assert mode & 0o040, oct(mode)          # lecture groupe
+    assert not mode & 0o007, oct(mode)      # rien pour les autres
+
+
+def test_secrets_montes_lisibles_par_l_uid_65532():
+    patch = docs(KIT / "deploy" / "tickets-patch.yaml")[0]
+    _lisible_par_le_groupe(patch["spec"]["template"]["spec"], "github-token")
+    # Le patch stratégique fusionne securityContext : celui du modèle reste en place.
+    base = next(d for d in docs(TEMPLATE_DEPLOY / "docs-mcp.yaml") if d["kind"] == "Deployment")
+    assert base["spec"]["template"]["spec"]["securityContext"].get("runAsNonRoot") is True
+    job = by_kind([EMETTEUR])["CronJob"][0]["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    _lisible_par_le_groupe(job, "github-app")
+    assert job["securityContext"]["runAsUser"] == job["securityContext"]["runAsGroup"] == 65532
+    assert job["securityContext"]["runAsNonRoot"] is True
+    for dockerfile in (KIT / "mcp" / "Dockerfile", EMETTEUR.parents[1] / "Dockerfile"):
+        assert "USER 65532:65532" in dockerfile.read_text(encoding="utf-8"), dockerfile
 
 
 def test_la_cle_de_l_application_ne_va_jamais_chez_une_equipe():
@@ -75,6 +100,18 @@ def test_emetteur_aux_droits_minimaux():
     assert all(not ({"create", "delete", "*"} & set(r["verbs"])) for r in regles)
     ns = k["Namespace"][0]
     assert ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
+    # Le RBAC vaut pour tous les namespaces : l'admission borne l'émetteur aux équipes.
+    sa = k["ServiceAccount"][0]["metadata"]
+    vap = k["ValidatingAdmissionPolicy"][0]
+    assert vap["spec"]["failurePolicy"] == "Fail"
+    regle = vap["spec"]["matchConstraints"]["resourceRules"][0]
+    assert regle["resources"] == ["secrets"] and "UPDATE" in regle["operations"]
+    assert [c["expression"] for c in vap["spec"]["matchConditions"]] == [
+        f"request.userInfo.username == 'system:serviceaccount:{sa['namespace']}:{sa['name']}'"]
+    assert "'agentic.io/team' in namespaceObject.metadata.labels" in vap["spec"]["validations"][0]["expression"]
+    binding = k["ValidatingAdmissionPolicyBinding"][0]["spec"]
+    assert binding["policyName"] == vap["metadata"]["name"] and binding["validationActions"] == ["Deny"]
+    assert "paramRef" not in binding and "matchResources" not in binding
     # Une équipe ne peut pas prendre le nom du namespace de l'émetteur.
     assert '"jetons-github"' in (REPO / "terraform" / "modules" / "platform" / "teams.tf").read_text(encoding="utf-8")
 

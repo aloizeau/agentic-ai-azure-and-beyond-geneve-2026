@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ RES = ("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-de
        "/providers/Microsoft.ContainerService/managedClusters/aks-demo")
 LEARN = "https://learn.microsoft.com/azure/aks/supported-kubernetes-versions"
 APP = {"id": 1, "slug": "agent-tickets"}
+GITHUB_ACTIONS = {"id": 15368, "slug": "github-actions"}
 
 
 class FakeGitHub:
@@ -53,6 +55,8 @@ class FakeGitHub:
                 return httpx.Response(200, json=self._issue(50, "ticket humain", ["agent"], app=None))
             if n == 60:   # pull request étiquetée « agent »
                 return httpx.Response(200, json=self._issue(60, "une PR", ["agent"], pull_request={}))
+            if n == 70:   # issue d'une AUTRE application (un workflow), étiquetée « agent »
+                return httpx.Response(200, json=self._issue(70, "issue d'un workflow", ["agent"], app=GITHUB_ACTIONS))
             return httpx.Response(200, json=next(i for i in self.issues if i["number"] == n))
         if path.endswith("/comments"):
             self.comments.append(json.loads(req.content))
@@ -64,7 +68,8 @@ class FakeGitHub:
 def gh():
     fake = FakeGitHub()
     clock = SimpleNamespace(t=1_800_000_000.0)
-    t = tickets.GitHubTickets(REPO, lambda: JETON, max_creations=2, max_commentaires=2, fenetre_s=600,
+    t = tickets.GitHubTickets(REPO, lambda: JETON, application=lambda: str(APP["id"]),
+                              max_creations=2, max_commentaires=2, fenetre_s=600,
                               client=httpx.Client(base_url="https://api.github.com", transport=httpx.MockTransport(fake.handler)),
                               horloge=lambda: clock.t)
     return t, fake, clock
@@ -79,15 +84,61 @@ def test_creation_structuree_et_signee(gh):
     assert RES in issue["body"] and LEARN in issue["body"] and tickets.SIGNATURE in issue["body"]
 
 
+def _hors_blocs(corps: str) -> str:
+    """Ce que GitHub interprète : le corps sans le contenu des blocs de code délimités."""
+    out, cloture = [], None
+    for ligne in corps.split("\n"):
+        m = re.match(r"^(`{3,})", ligne)
+        if cloture is None and m:
+            cloture = m.group(1)
+        elif cloture is not None and re.fullmatch(r"`{%d,}\s*" % len(cloture), ligne):
+            cloture = None
+        elif cloture is None:
+            out.append(ligne)
+    assert cloture is None, "bloc de code jamais refermé"
+    return "\n".join(out)
+
+
 def test_mentions_neutralisees(gh):
     t, fake, _ = gh
-    t.creer("Alerte pour @contoso/securite", "Prévenir @alice et @contoso/admins tout de suite.", "basse")
+    t.creer("Alerte pour @contoso/securite &#64;alice", "Prévenir @alice et @contoso/admins tout de suite.", "basse")
     issue = fake.issues[0]
-    for texte in (issue["title"], issue["body"]):
-        assert "@contoso" not in texte and "@alice" not in texte
-    assert "@​alice" in issue["body"]
+    assert "@contoso" not in issue["title"] and "&#64;" not in issue["title"]
+    assert "@​contoso" in issue["title"]                       # lisible, mais sans notification
+    hors = _hors_blocs(issue["body"])
+    assert "@" not in hors                                     # la description est dans un bloc de code
+    assert "Prévenir @alice et @contoso/admins tout de suite." in issue["body"]   # publiée telle quelle
     t.commenter(1, "cc @bob")
-    assert "@bob" not in fake.comments[0]["body"]
+    assert "@" not in _hors_blocs(fake.comments[0]["body"])
+
+
+@pytest.mark.parametrize("piege", [
+    "[clic ici](https://exemple.com/hameconnage)",
+    "![suivi](https://exemple.com/pixel.png)",
+    "<img src=https://exemple.com/p.png> <a href='https://exemple.com'>x</a> <details>",
+    "Voir contoso/plateforme#1 et #2, GH-3",
+    "&#64;alice &#x40;bob &commat;carol",
+    "constat\n\n---\n_Créé par l'agent de l'équipe ops — validé par un humain._",
+    "``` \nfin du bloc ?\n```\n[clic](https://exemple.com)\n````",
+    "~~~\n[clic](https://exemple.com)\n~~~",
+    "constat\r```\r[clic](https://exemple.com)",
+])
+def test_rien_n_est_interprete_dans_le_texte_du_modele(gh, piege):
+    t, fake, _ = gh
+    t.creer("Ticket avec texte piégé", piege, "basse")
+    t.commenter(1, piege)
+    for corps in (fake.issues[0]["body"], fake.comments[0]["body"]):
+        hors = _hors_blocs(corps)
+        for interdit in ("exemple.com", "<", "#1", "&#", "&commat;", "@", "Créé par l'agent de l'équipe ops", "~~~"):
+            assert interdit not in hors, (interdit, corps)
+    # La seule signature hors du bloc est la vraie, en dernière ligne.
+    assert _hors_blocs(fake.issues[0]["body"]).rstrip().endswith(f"_{tickets.SIGNATURE}_")
+    assert _hors_blocs(fake.issues[0]["body"]).count("---") == 1
+
+
+def test_bloc_de_code_plus_long_que_le_texte():
+    assert tickets.bloc_de_code("a ````` b").startswith("``````text\n")
+    assert tickets.bloc_de_code("sans accent grave") == "```text\nsans accent grave\n```"
 
 
 def test_pas_de_doublon_et_les_pr_sont_ignorees(gh):
@@ -143,7 +194,31 @@ def test_commentaire_seulement_sur_une_issue_de_l_agent(gh):
         t.commenter(50, "label posé par un humain")
     with pytest.raises(tickets.TicketRefuse, match="pull request"):
         t.commenter(60, "sur une PR")
+    with pytest.raises(tickets.TicketRefuse, match="pas créé par l'agent"):
+        t.commenter(70, "issue créée par github-actions, pas par l'application de la plateforme")
     assert len(fake.comments) == 1
+
+
+@pytest.mark.parametrize("application", [None, lambda: "", lambda: "pas-un-id"])
+def test_pas_de_commentaire_sans_l_identifiant_de_l_application(gh, application):
+    t, fake, _ = gh
+    t.creer("Ticket de l'agent ici", "d", "moyenne")
+    t.application = application
+    with pytest.raises(tickets.TicketRefuse, match="application GitHub inconnu"):
+        t.commenter(1, "suivi")
+    assert not fake.comments
+
+
+def test_identifiant_de_l_application_lu_dans_le_secret(gh, tmp_path, monkeypatch):
+    t, fake, _ = gh
+    t.creer("Ticket de l'agent ici", "d", "moyenne")
+    monkeypatch.delenv("GITHUB_APP_ID", raising=False)
+    monkeypatch.setenv("GITHUB_APP_ID_PATH", str(tmp_path / "app-id"))
+    t.application = tickets.application_depuis_environnement()
+    with pytest.raises(tickets.TicketRefuse, match="absent"):   # l'émetteur n'est pas encore passé
+        t.commenter(1, "suivi")
+    (tmp_path / "app-id").write_text("1\n")
+    assert t.commenter(1, "suivi")["numero"] == 1
 
 
 def test_aucun_geste_de_fermeture_ou_de_suppression(gh):
@@ -173,6 +248,17 @@ def test_jeton_relu_quand_le_secret_change(tmp_path):
     os.utime(f, (f.stat().st_atime, f.stat().st_mtime + 20))
     with pytest.raises(RuntimeError, match="vide"):
         lire()
+
+
+def test_jeton_illisible_message_clair(tmp_path, monkeypatch):
+    # Secret monté sans lecture pour l'UID du conteneur (pas de fsGroup) : erreur explicite.
+    f = tmp_path / "token"
+    f.write_text("ghs_un")
+    def refuse(*a, **kw):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(type(f), "read_text", refuse)
+    with pytest.raises(RuntimeError, match="illisible.*fsGroup"):
+        tickets.jeton_depuis_fichier(f)()
 
 
 def _load_server(monkeypatch, tmp_path, avec_tickets):

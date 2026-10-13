@@ -32,14 +32,42 @@
 [CmdletBinding()]
 param(
   # Validés : ces noms sont insérés dans une règle CEL de la passerelle.
-  [ValidatePattern('^[a-z][a-z0-9-]{1,18}[a-z0-9]$')]
+  # -cmatch et \A…\z (chaque élément) : ni majuscules, ni retour à la ligne final.
+  [ValidateScript({ $_ -cmatch '\A[a-z][a-z0-9-]{1,18}[a-z0-9]\z' })]
   [string[]]$EquipesAzure = @("equipe-ops"),
-  [ValidatePattern('^[0-9]{1,12}$')]
+  [ValidateScript({ $_ -cmatch '\A[0-9]{1,12}\z' })]
   [string]$GitHubAppId,
   [string]$GitHubAppKeyPath
 )
 
 . (Join-Path $PSScriptRoot "..\lib.ps1")
+
+# Une seule politique d'autorisation MCP par backend. Plusieurs politiques Allow
+# sur le même backend s'additionnent (OU) : une ancienne politique oubliée
+# (kubectl apply -k n'élague rien) rouvre ce que la liste blanche ferme.
+function Assert-OneMcpAuthorization {
+  # lib.ps1 active StrictMode 2.0 : un backend sans spec.mcp ou une politique sans
+  # spec.backend lèverait une erreur à l'accès. Désactivé dans cette fonction seulement.
+  Set-StrictMode -Off
+  $backends = @((Get-KubeJson @("get", "agentgatewaybackends", "-A")).items | Where-Object { $_.spec.mcp })
+  $policies = @((Get-KubeJson @("get", "agentgatewaypolicies", "-A")).items | Where-Object { $_.spec.backend.mcp.authorization })
+  $doublons = @()
+  foreach ($b in $backends) {
+    $ns = $b.metadata.namespace; $name = $b.metadata.name
+    $matching = @($policies | Where-Object {
+        $p = $_
+        $p.metadata.namespace -eq $ns -and @($p.spec.targetRefs | Where-Object { $_.kind -eq "AgentgatewayBackend" -and $_.name -eq $name }).Count -gt 0
+      } | ForEach-Object { $_.metadata.name })
+    if ($matching.Count -gt 1) { $doublons += "$ns/$name : $($matching -join ', ')" }
+    elseif ($matching.Count -eq 0) { Info "backend MCP $ns/$name : aucune liste blanche d'outils" }
+  }
+  if ($doublons.Count -gt 0) {
+    $doublons | ForEach-Object { Ko "plusieurs politiques d'autorisation MCP — $_" }
+    throw "plusieurs AgentgatewayPolicy d'autorisation MCP sur un même backend : supprimer les anciennes (kubectl -n <ns> delete agentgatewaypolicy <nom>)"
+  }
+  Ok "une seule liste blanche d'outils par backend MCP ($($backends.Count) backend(s))"
+}
+
 Assert-Tools @("az", "kubectl", "terraform", "gh")
 $ns = "outils-entreprise"
 $sa = "azure-mcp"
@@ -92,10 +120,14 @@ foreach ($f in Get-ChildItem $work -Filter *.yaml) {
   foreach ($k in $markers.Keys) { $text = $text.Replace($k, $markers[$k]) }
   [IO.File]::WriteAllText($f.FullName, $text, [Text.UTF8Encoding]::new($false))
 }
+# Ancienne liste NOIRE sur mcp-equipes (avant l'audit d'octobre 2026) : apply -k
+# ne la supprime pas, et avec outils-equipes-autorises elle ouvrirait tout (OU).
+Invoke-Native { kubectl -n agentgateway-system delete agentgatewaypolicy outils-equipes-lecture --ignore-not-found } "suppression de outils-equipes-lecture"
 try {
   Invoke-Native { kubectl apply -k $work } "kubectl apply -k plateforme"
 } finally { Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue }
 Invoke-Native { kubectl -n $ns rollout status deploy/azure-mcp --timeout=240s } "Azure MCP Server prêt"
+Assert-OneMcpAuthorization
 Ok "Azure : équipes $($EquipesAzure -join ', ') · Learn : toutes les équipes"
 
 # -----------------------------------------------------------------------------

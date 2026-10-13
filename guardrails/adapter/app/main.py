@@ -8,6 +8,7 @@ always answers HTTP 200; a Reject is expressed by `status_code` in the body.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel
 
+from . import dlp
 from .backends import (
     CheckResult,
     Direction,
@@ -152,6 +154,10 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
     async def run(req: Request, messages: list[dict], direction: Direction) -> CheckResult | None:
         """Returns None when the engine failed (caller applies FAIL_MODE)."""
         profile = profile_of(req)
+        # Le moteur voit le texte normalisé (NFKC, sans caractères invisibles) :
+        # « 4111\u200b1111… » ou des chiffres pleine largeur ne contournent pas
+        # les regex. Le contenu d'origine n'est remplacé que sur un Mask.
+        messages = [{**m, "content": dlp.normalize(str(m.get("content", "")))} for m in messages]
         t0 = time.perf_counter()
         try:
             return await req.app.state.backend.check(profile, messages, direction)
@@ -177,21 +183,51 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
             decide(Direction.INPUT, "pass", None, req)
             return {"action": {"reason": "no user message to check"}}
 
-        # Rails see the conversation up to the newest user message. Les messages
-        # qui suivent (role `tool`, résultats d'appels d'outils…) viennent de
-        # sources externes : injection indirecte ou secret lu par un outil. On
-        # les passe aussi dans les rails d'entrée du même profil, un par un, en
-        # tant que message `user` (les rails d'entrée ne regardent que celui-là).
-        # Les messages `assistant` sont la sortie du modèle, déjà vue en /response.
+        def reject(rail: str, where: str = "", source: str = "NeMo rail") -> dict[str, Any]:
+            decide(Direction.INPUT, "reject", rail, req)
+            return {"action": {"status_code": s.reject_status, "body": refusal(rail),
+                               "reason": f"blocked by {source}: {rail}{where}"}}
+
+        # 1. Carte bancaire sur le dernier message user : contrôle Python
+        #    (groupement + préfixe émetteur + Luhn, cf. app/dlp.py), avant tout
+        #    appel au moteur — comme les regex, il court-circuite le self check.
+        if dlp.find_card(msgs[user_idx]["content"]):
+            return reject(dlp.CARD_RAIL, source="adapter rail")
+
+        # 2. Les messages qui suivent le dernier user (role `tool`, résultats
+        #    d'appels d'outils…) viennent de sources externes : un outil peut
+        #    lire et renvoyer un secret. Les messages `assistant` sont la sortie
+        #    du modèle, déjà vue en /response.
+        #    TOOL_RAILS=secrets (défaut) : motifs de secrets seulement, en
+        #    Python — ni motifs PII (versions, IP, dates d'une doc Learn ne sont
+        #    pas une fuite de données personnelles), ni self check LLM (un appel
+        #    par résultat d'outil, sous le timeout gateway de 3 s, faisait
+        #    refuser en fail-closed les requêtes à plusieurs outils).
+        tool_idx = [i for i, m in enumerate(msgs)
+                    if i > user_idx and m["role"] != "assistant" and m["content"]]
+        for i in tool_idx:
+            if dlp.find_secret(msgs[i]["content"]):
+                return reject(dlp.SECRET_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail")
+            # TOOL_RAILS=profile : rails PII complets, carte bancaire comprise
+            # (le motif carte n'est plus dans le YAML, il est ici).
+            if s.tool_rails == "profile" and dlp.find_card(msgs[i]["content"]):
+                return reject(dlp.CARD_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail")
+
+        # 3. Rails du profil : la conversation jusqu'au dernier user ; avec
+        #    TOOL_RAILS=profile, aussi chaque message tool seul (en tant que
+        #    message `user`, les rails d'entrée ne regardent que celui-là).
+        #    Tous les contrôles partent EN PARALLÈLE : la latence est celle du
+        #    plus lent, pas la somme. Les verdicts sont lus dans l'ordre des
+        #    messages, la décision reste déterministe.
         checks = [(user_idx, msgs[: user_idx + 1])]
-        checks += [(i, [{"role": "user", "content": m["content"]}])
-                   for i, m in enumerate(msgs) if i > user_idx and m["role"] != "assistant" and m["content"]]
+        if s.tool_rails == "profile":
+            checks += [(i, [{"role": "user", "content": msgs[i]["content"]}]) for i in tool_idx]
+        results = await asyncio.gather(*(run(req, conv, Direction.INPUT) for _, conv in checks))
 
         masked: list[dict] | None = None
         mask_rail: str | None = None
         engine_failed = False
-        for idx, conv in checks:
-            res = await run(req, conv, Direction.INPUT)
+        for (idx, _), res in zip(checks, results):
             where = "" if idx == user_idx else f" ({msgs[idx]['role']} message #{idx})"
 
             if res is None:
@@ -204,9 +240,7 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
                                    "reason": "guardrail engine unavailable (fail-closed)"}}
 
             if res.verdict is Verdict.BLOCKED:
-                decide(Direction.INPUT, "reject", res.rail, req)
-                return {"action": {"status_code": s.reject_status, "body": refusal(res.rail),
-                                   "reason": f"blocked by NeMo rail: {res.rail}{where}"}}
+                return reject(res.rail, where)
 
             if res.verdict is Verdict.MODIFIED and res.content != msgs[idx]["content"]:
                 masked = masked or [dict(m) for m in msgs]  # message count must stay identical

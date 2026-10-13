@@ -215,21 +215,29 @@ if ($hasPublic) {
   Step "Cloudflare (exposition publique)"
   if ($PSVersionTable.PSVersion.Major -lt 6) { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
   # Jamais écrit sur disque. Saisi ici, il est retiré de l'environnement à la
-  # fin du script (bloc finally) : les commandes lancées ensuite dans cette
-  # session PowerShell n'en héritent pas.
+  # fin du script (bloc finally plus bas) — et dès maintenant si la
+  # vérification échoue : les commandes lancées ensuite dans cette session
+  # PowerShell n'en héritent pas.
   if (-not $env:CLOUDFLARE_API_TOKEN) {
     $secure = Read-Host "Jeton d'API Cloudflare (Zone:Read + DNS:Edit sur la zone)" -AsSecureString
     $env:CLOUDFLARE_API_TOKEN = [System.Net.NetworkCredential]::new("", $secure).Password
     $script:OwnCloudflareToken = $true
   }
-  $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
-  $zoneName = if ($PublicZone) { $PublicZone } else {
-    ((Select-String -Path $tfvars -Pattern 'zone\s*=\s*"([^"]+)"').Matches | Select-Object -First 1).Groups[1].Value
+  try {
+    $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
+    $zoneName = if ($PublicZone) { $PublicZone } else {
+      ((Select-String -Path $tfvars -Pattern 'zone\s*=\s*"([^"]+)"').Matches | Select-Object -First 1).Groups[1].Value
+    }
+    try { $zones = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones?name=$zoneName" -Headers $headers }
+    catch { throw "Jeton Cloudflare refusé : $($_.Exception.Message)" }
+    if (@($zones.result).Count -ne 1) { throw "Zone $zoneName introuvable avec ce jeton (droit Zone:Read manquant ?)." }
+    Ok "jeton Cloudflare valide, zone $zoneName accessible"
   }
-  try { $zones = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones?name=$zoneName" -Headers $headers }
-  catch { throw "Jeton Cloudflare refusé : $($_.Exception.Message)" }
-  if (@($zones.result).Count -ne 1) { throw "Zone $zoneName introuvable avec ce jeton (droit Zone:Read manquant ?)." }
-  Ok "jeton Cloudflare valide, zone $zoneName accessible"
+  catch {
+    if ($script:OwnCloudflareToken) { Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue }
+    throw
+  }
+  finally { $headers = $null }
 }
 
 # -----------------------------------------------------------------------------
@@ -259,6 +267,27 @@ try {
   Step "Phase 2 — plateforme (plan)"
   Invoke-Native { terraform plan -input=false -var deploy_platform=true "-out=phase2.tfplan" } "terraform plan (phase 2)"
   Confirm-Step "Appliquer la phase 2 ?"
+
+  # Politiques d'admission posées avec kubectl par une version précédente : absentes
+  # de l'état, kubernetes_manifest refuserait de les créer (« already exists »).
+  # Celles qui ne sont pas dans l'état sont supprimées juste avant l'apply, qui les
+  # recrée aussitôt (quelques secondes sans ces politiques : acceptable pour un
+  # cluster de démo). Celles que Terraform gère déjà ne sont pas touchées.
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { $inState = @(terraform state list 2>$null) } finally { $ErrorActionPreference = $previous }
+  foreach ($name in "agent-ready-perimetre", "equipes-services") {
+    foreach ($kind in "ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding") {
+      $address = "module.platform[0].kubernetes_manifest.admission[`"$kind/$name`"]"
+      if ($inState -contains $address) { continue }
+      $resource = $kind.ToLower()
+      if (Test-Native { kubectl get $resource $name }) {
+        Warn "$kind/$name présente dans le cluster mais pas dans l'état Terraform : supprimée, Terraform la recrée"
+        Invoke-Native { kubectl delete $resource $name --ignore-not-found } "kubectl delete $kind/$name"
+      }
+    }
+  }
+
   Invoke-Native { terraform apply -input=false phase2.tfplan } "terraform apply (phase 2)"
 
   Step "État du cluster"
