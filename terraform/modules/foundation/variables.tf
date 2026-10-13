@@ -24,3 +24,8 @@ variable "aks_admin_group_object_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "api_server_authorized_ip_ranges" {
+  type    = list(string)
+  default = []
+}

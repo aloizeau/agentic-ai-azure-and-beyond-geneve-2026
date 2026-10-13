@@ -7,7 +7,9 @@ import yaml
 D = Path(__file__).resolve().parents[1]
 KIT = D / "kit-equipe"
 PLATEFORME = D / "plateforme"
-TEMPLATE_DEPLOY = D.parents[1] / "terraform" / "teams" / "template" / "deploy"
+REPO = D.parents[1]
+TEMPLATE_DEPLOY = REPO / "terraform" / "teams" / "template" / "deploy"
+EMETTEUR = REPO / "tools" / "github-token-issuer" / "deploy" / "emetteur.yaml"
 
 
 def docs(path):
@@ -48,10 +50,33 @@ def test_patch_vise_le_deploiement_du_modele():
     assert patch["metadata"]["name"] == base["metadata"]["name"]
     assert patch["spec"]["template"]["spec"]["containers"][0]["name"] == base["spec"]["template"]["spec"]["containers"][0]["name"]
     env = {e["name"] for e in patch["spec"]["template"]["spec"]["containers"][0]["env"]}
-    assert {"GITHUB_REPOSITORY", "GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY_PATH"} <= env
+    assert {"GITHUB_REPOSITORY", "GITHUB_TOKEN_PATH"} <= env
     tickets = (KIT / "mcp" / "tickets.py").read_text(encoding="utf-8")
     for var in env:
         assert var in tickets
+    # Le pod monte le jeton émis par la plateforme, jamais la clé de l'application.
+    volumes = patch["spec"]["template"]["spec"]["volumes"]
+    assert [v["secret"]["secretName"] for v in volumes] == ["github-token"]
+
+
+def test_la_cle_de_l_application_ne_va_jamais_chez_une_equipe():
+    for p in list(KIT.rglob("*")) + [REPO / "terraform" / "teams" / "main.tf", REPO / "terraform" / "teams" / "variables.tf"]:
+        if p.is_file() and "__pycache__" not in p.parts:
+            texte = p.read_text(encoding="utf-8")
+            assert "github-app" not in texte and "PRIVATE_KEY" not in texte.upper().replace("PRIVATE KEY", ""), p
+    assert 'resource "kubernetes_secret" "github_token"' in (REPO / "terraform" / "teams" / "main.tf").read_text(encoding="utf-8")
+
+
+def test_emetteur_aux_droits_minimaux():
+    k = by_kind([EMETTEUR])
+    regles = k["ClusterRole"][0]["rules"]
+    secrets = [r for r in regles if "secrets" in r["resources"]]
+    assert secrets == [{"apiGroups": [""], "resources": ["secrets"], "resourceNames": ["github-token"], "verbs": ["get", "patch"]}]
+    assert all(not ({"create", "delete", "*"} & set(r["verbs"])) for r in regles)
+    ns = k["Namespace"][0]
+    assert ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
+    # Une équipe ne peut pas prendre le nom du namespace de l'émetteur.
+    assert '"jetons-github"' in (REPO / "terraform" / "modules" / "platform" / "teams.tf").read_text(encoding="utf-8")
 
 
 def test_agent_et_outils_coherents():
@@ -87,8 +112,11 @@ def test_passerelle_coherente():
     assert pols["acces-agents-outils"]["spec"]["targetRefs"][0]["name"] == route["metadata"]["name"]
     assert pols["acces-agents-outils"]["spec"]["traffic"]["apiKeyAuthentication"]["secretSelector"] == {"matchLabels": {"agentic.io/virtual-key": "true"}}
     assert pols["outils-entreprise-autorises"]["spec"]["targetRefs"][0]["name"] == backend["metadata"]["name"]
-    rules = pols["outils-equipes-lecture"]["spec"]["backend"]["mcp"]["authorization"]["policy"]["matchExpressions"]
-    assert "_creer_ticket" in rules[0] and "_commenter_ticket" in rules[0]
+    # Côté personnes (/mcp-equipes, LibreChat), la plateforme n'ouvre que les outils de
+    # lecture : creer_ticket et commenter_ticket restent des gestes de l'agent, approuvés.
+    autorisations = {p["metadata"]["name"]: p for p in docs(REPO / "gateway" / "deploy" / "autorisations-mcp.yaml")}
+    regles = " ".join(autorisations["outils-equipes-autorises"]["spec"]["backend"]["mcp"]["authorization"]["policy"]["matchExpressions"])
+    assert "_lister_tickets" in regles and "_creer_ticket" not in regles and "_commenter_ticket" not in regles
 
 
 def test_azure_mcp_lecture_seule_et_isole():

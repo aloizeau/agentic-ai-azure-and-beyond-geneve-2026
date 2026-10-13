@@ -46,6 +46,9 @@ locals {
         # forwards their identity as X-Forwarded-* headers. Trust it so Grafana
         # signs the user in as themselves instead of falling back to the
         # anonymous Viewer (which is what shows the "Sign in" button).
+        # The header is trusted from any caller that reaches Grafana: the
+        # NetworkPolicy grafana-entrees (network-policies.tf) is what keeps that
+        # to oauth2-proxy and the platform. New users are Viewers, never Admins.
         "auth.proxy" = {
           enabled         = true
           header_name     = "X-Forwarded-Email"
@@ -53,6 +56,7 @@ locals {
           auto_sign_up    = true
           headers         = "Name:X-Forwarded-Preferred-Username Login:X-Forwarded-Email"
         }
+        users = { auto_assign_org_role = "Viewer" }
       }
     }
   })] : []

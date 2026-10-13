@@ -17,8 +17,17 @@ locals {
 resource "kubernetes_namespace" "team" {
   for_each = toset(var.teams)
   metadata {
-    name   = each.value
-    labels = { "agentic.io/team" = each.value }
+    name = each.value
+    labels = {
+      "agentic.io/team" = each.value
+      # No privileged pod, hostPath or host network in a team namespace: a
+      # team deploys its own Deployments, it must not be able to take a node.
+      # « restricted » is reported (warn, audit) — not enforced, because the
+      # pods kagent generates for agents are not all restricted-compliant.
+      "pod-security.kubernetes.io/enforce" = "baseline"
+      "pod-security.kubernetes.io/warn"    = "restricted"
+      "pod-security.kubernetes.io/audit"   = "restricted"
+    }
   }
 }
 
@@ -128,7 +137,8 @@ resource "kubernetes_cluster_role" "team_provisioner" {
 }
 
 resource "kubernetes_cluster_role_binding" "team_provisioner" {
-  count = var.ai_team_enabled ? 1 : 0
+  count      = var.ai_team_enabled ? 1 : 0
+  depends_on = [kubernetes_manifest.admission]
   metadata { name = "agentic-team-provisioner" }
   role_ref {
     api_group = "rbac.authorization.k8s.io"
@@ -144,17 +154,28 @@ resource "kubernetes_cluster_role_binding" "team_provisioner" {
   }
 }
 
-resource "local_file" "team_provisioner_admission" {
-  count    = var.ai_team_enabled ? 1 : 0
-  filename = "${path.root}/.generated/agent-ready/admission.yaml"
-  content  = templatefile("${path.module}/manifests/agent-ready-admission.yaml.tftpl", { principal_id = var.ai_team_principal_id })
+# Admission policies, applied by the Kubernetes provider itself (its own
+# credentials, never the ambient kubectl context) and destroyed with the
+# platform. The provisioner's binding waits for its policy: the pipeline never
+# holds its rights without the perimeter around them.
+locals {
+  # Names no Agent Ready team may take (the platform's, created before or after).
+  noms_reserves = ["default", "kagent", "monitoring", "librechat", "agentregistry", "platform", "plateforme",
+  "outils-entreprise", "models", "cert-manager", "jetons-github"]
+
+  admission_docs = concat(
+    var.ai_team_enabled ? [
+      for d in split("\n---\n", templatefile("${path.module}/manifests/agent-ready-admission.yaml.tftpl", {
+        principal_id  = var.ai_team_principal_id
+        noms_reserves = jsonencode(local.noms_reserves)
+      })) : yamldecode(d)
+    ] : [],
+    [for d in split("\n---\n", file("${path.module}/manifests/equipes-admission.yaml")) : yamldecode(d)],
+  )
+  admission = { for d in local.admission_docs : "${d.kind}/${d.metadata.name}" => d }
 }
 
-resource "terraform_data" "team_provisioner_admission" {
-  count            = var.ai_team_enabled ? 1 : 0
-  triggers_replace = [local_file.team_provisioner_admission[0].content]
-
-  provisioner "local-exec" {
-    command = "kubectl apply -f ${local_file.team_provisioner_admission[0].filename}"
-  }
+resource "kubernetes_manifest" "admission" {
+  for_each = local.admission
+  manifest = each.value
 }

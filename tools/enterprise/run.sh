@@ -17,21 +17,26 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 kubectl get ns "$NS" >/dev/null 2>&1 || kubectl create ns "$NS"
 
+# Les valeurs passent par --from-env-file sur une substitution de processus
+# (printf est un builtin) : jamais sur la ligne de commande de kubectl, donc
+# invisibles dans `ps`. Les noms sont vérifiés d'abord (set -u + :?).
+env_file() { local k; for k in "$@"; do printf '%s=%s\n' "$k" "${!k}"; done; }
+
+: "${GRAFANA_URL:?export GRAFANA_URL}" "${GRAFANA_API_KEY:?export GRAFANA_API_KEY}"
 kubectl -n "$NS" create secret generic grafana-mcp-credentials \
-  --from-literal=GRAFANA_URL="${GRAFANA_URL:?export GRAFANA_URL}" \
-  --from-literal=GRAFANA_API_KEY="${GRAFANA_API_KEY:?export GRAFANA_API_KEY}" \
+  --from-env-file=<(env_file GRAFANA_URL GRAFANA_API_KEY) \
   --dry-run=client -o yaml | kubectl apply -f -
 
+: "${AZURE_TENANT_ID:?export AZURE_TENANT_ID}" "${AZURE_CLIENT_ID:?export AZURE_CLIENT_ID}" \
+  "${AZURE_CLIENT_SECRET:?export AZURE_CLIENT_SECRET}"
 kubectl -n "$NS" create secret generic azure-mcp-credentials \
-  --from-literal=AZURE_TENANT_ID="${AZURE_TENANT_ID:?export AZURE_TENANT_ID}" \
-  --from-literal=AZURE_CLIENT_ID="${AZURE_CLIENT_ID:?export AZURE_CLIENT_ID}" \
-  --from-literal=AZURE_CLIENT_SECRET="${AZURE_CLIENT_SECRET:?export AZURE_CLIENT_SECRET}" \
+  --from-env-file=<(env_file AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET) \
   --dry-run=client -o yaml | kubectl apply -f -
 
+: "${MS365_MCP_TENANT_ID:?export MS365_MCP_TENANT_ID}" "${MS365_MCP_CLIENT_ID:?export MS365_MCP_CLIENT_ID}" \
+  "${MS365_MCP_CLIENT_SECRET:?export MS365_MCP_CLIENT_SECRET}"
 kubectl -n "$NS" create secret generic graph-mcp-credentials \
-  --from-literal=MS365_MCP_TENANT_ID="${MS365_MCP_TENANT_ID:?export MS365_MCP_TENANT_ID}" \
-  --from-literal=MS365_MCP_CLIENT_ID="${MS365_MCP_CLIENT_ID:?export MS365_MCP_CLIENT_ID}" \
-  --from-literal=MS365_MCP_CLIENT_SECRET="${MS365_MCP_CLIENT_SECRET:?export MS365_MCP_CLIENT_SECRET}" \
+  --from-env-file=<(env_file MS365_MCP_TENANT_ID MS365_MCP_CLIENT_ID MS365_MCP_CLIENT_SECRET) \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl apply -k "$HERE/deploy"

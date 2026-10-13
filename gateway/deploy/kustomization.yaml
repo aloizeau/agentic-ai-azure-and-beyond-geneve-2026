@@ -17,6 +17,7 @@ resources:
   - backend-mcp.yaml
   - routes.yaml
   - policies.yaml
+  - autorisations-mcp.yaml     # listes blanches d'outils MCP (/mcp, /mcp-equipes)
   - metrics.yaml
   - web-search.yaml
 

@@ -63,7 +63,19 @@ resource "azurerm_kubernetes_cluster" "this" {
   ai_toolchain_operator_enabled = var.ai_toolchain_operator_enabled
 
   role_based_access_control_enabled = true
-  local_account_disabled            = false # PoC: keep admin kubeconfig usable
+  # PoC: the presenter and Terraform use the admin kubeconfig. Its client
+  # certificate cannot be revoked and lives in the Terraform state: in
+  # production, set true and grant aks_admin_group_object_ids instead.
+  local_account_disabled = false
+
+  # Who may reach the API server at all. Empty = the whole internet, then only
+  # authentication protects it: set your workstation and CI egress ranges.
+  dynamic "api_server_access_profile" {
+    for_each = length(var.api_server_authorized_ip_ranges) > 0 ? [1] : []
+    content {
+      authorized_ip_ranges = var.api_server_authorized_ip_ranges
+    }
+  }
 
   # Microsoft Entra ID authentication + Kubernetes RBAC. Needed by the
   # "Agent Ready" teams (démo B, terraform/teams): a team's deployment pipeline

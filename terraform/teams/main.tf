@@ -8,7 +8,7 @@
 #               four role assignments, nothing else
 #   Kubernetes  namespace (label agentic.io/team), quota, default limits,
 #               virtual key for the gateway, RoleBinding agentic-team-deployer,
-#               optional: the platform GitHub App for the team's tickets (démo D)
+#               the slot of its GitHub token (démo D: filled by the platform)
 #   GitHub      private repository agent-<équipe> from the standard template,
 #               its Actions variables, two pipelines calling the AI team's
 #               reusable workflows
@@ -42,13 +42,24 @@ resource "azurerm_user_assigned_identity" "pipeline" {
   tags                = local.tags
 }
 
-# Only the main branch of the team repository — through the AI team's reusable
-# workflows, the token's subject stays the caller's repository and ref.
+# Only the main branch of the team repository, AND only inside one of the AI
+# team's two reusable workflows: the repository's OIDC subject carries
+# job_workflow_ref (github_actions_repository_oidc_subject_claim_customization_template
+# below). A workflow the team writes or rewrites itself — even on main — gets
+# a subject no federation matches: no Azure token, no kubectl.
+locals {
+  reusable_workflows = {
+    image       = "agent-image.yml"
+    deploiement = "agent-deploy.yml"
+  }
+}
+
 resource "azurerm_federated_identity_credential" "pipeline" {
-  name                      = "github-main"
+  for_each                  = local.reusable_workflows
+  name                      = "github-main-${each.key}"
   user_assigned_identity_id = azurerm_user_assigned_identity.pipeline.id
   issuer                    = "https://token.actions.githubusercontent.com"
-  subject                   = "repo:${var.github_owner}/${local.repository}:ref:refs/heads/main"
+  subject                   = "repo:${var.github_owner}/${local.repository}:ref:refs/heads/main:job_workflow_ref:${var.platform_repository}/.github/workflows/${each.value}@refs/heads/${var.platform_ref}"
   audience                  = ["api://AzureADTokenExchange"]
 }
 
@@ -127,6 +138,12 @@ resource "kubernetes_namespace" "equipe" {
     labels = {
       "agentic.io/team"        = var.equipe # gateway discovery of its MCP servers, admission perimeter
       "agentic.io/agent-ready" = "true"
+      # No privileged pod, hostPath or host network: the team deploys its own
+      # Deployments, it must not be able to take a node. Required by the
+      # admission policy agent-ready-perimetre, which also forbids removing it.
+      "pod-security.kubernetes.io/enforce" = "baseline"
+      "pod-security.kubernetes.io/warn"    = "restricted"
+      "pod-security.kubernetes.io/audit"   = "restricted"
     }
   }
 }
@@ -191,20 +208,21 @@ resource "kubernetes_secret" "virtual_key" {
   }
 }
 
-# Démo D — the platform GitHub App, for the team's MCP server only (tickets in
-# its own repository: the server asks GitHub for a one-hour token restricted
-# to agent-<équipe> and issues:write). The team's pipeline cannot read it
-# (agentic-team-deployer: no Secrets); its pod mounts it.
-resource "kubernetes_secret" "github_app" {
-  # The ID is not secret: usable in count. "" = an unset Actions variable.
-  count = (var.github_app_id == null ? "" : var.github_app_id) == "" ? 0 : 1
+# Démo D — the slot of the team's GitHub token. The platform's issuer
+# (tools/github-token-issuer, namespace jetons-github) writes in it, every 30
+# minutes, a one-hour installation token restricted to <owner>/agent-<équipe>
+# (a name it derives from this namespace itself, never from anything a team
+# writes) and issues:write. The GitHub App's private key never enters here.
+resource "kubernetes_secret" "github_token" {
   metadata {
-    name      = "github-app"
+    name      = "github-token"
     namespace = kubernetes_namespace.equipe.metadata[0].name
+    labels    = { "agentic.io/github-token" = "true" }
   }
-  data = {
-    "app-id"      = var.github_app_id
-    "private-key" = var.github_app_private_key
+  data = {}
+
+  lifecycle {
+    ignore_changes = [data] # the issuer's, not Terraform's
   }
 }
 
@@ -242,6 +260,15 @@ resource "github_repository" "equipe" {
   delete_branch_on_merge = true
   vulnerability_alerts   = true
   archive_on_destroy     = false
+}
+
+# OIDC subject of this repository's workflows: repo + ref + the workflow file
+# that actually runs (job_workflow_ref). VÉRIFIER (D-7): the subject printed by
+# `azure/login` in « 1 · Image » equals the federation above.
+resource "github_actions_repository_oidc_subject_claim_customization_template" "equipe" {
+  repository         = github_repository.equipe.name
+  use_default        = false
+  include_claim_keys = ["repo", "context", "job_workflow_ref"]
 }
 
 locals {
@@ -314,5 +341,9 @@ resource "github_repository_file" "workflows" {
   commit_email        = "agent-ready@users.noreply.github.com"
   overwrite_on_create = true
 
-  depends_on = [github_repository_file.content, github_actions_variable.equipe]
+  depends_on = [
+    github_repository_file.content,
+    github_actions_variable.equipe,
+    github_actions_repository_oidc_subject_claim_customization_template.equipe,
+  ]
 }

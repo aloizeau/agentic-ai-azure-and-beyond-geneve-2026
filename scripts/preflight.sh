@@ -395,9 +395,9 @@ head2 "9 · Provider de repli hors Azure (cran 3)"
 if [[ -z "${OVH_AI_ENDPOINTS_TOKEN:-}" ]]; then
   warn "Clé OVHcloud AI Endpoints" "OVH_AI_ENDPOINTS_TOKEN non défini — le cran 3 ne sera pas testable"
 else
-  HTTP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-          -H "Authorization: Bearer $OVH_AI_ENDPOINTS_TOKEN" \
-          "$OVH_ENDPOINT/models" 2>/dev/null)"
+  # En-tête lu sur stdin (-H @-) : le jeton n'apparaît pas dans `ps`.
+  HTTP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -H @- \
+          "$OVH_ENDPOINT/models" 2>/dev/null <<<"Authorization: Bearer $OVH_AI_ENDPOINTS_TOKEN")"
   case "$HTTP" in
     200) ok  "OVHcloud AI Endpoints" "joignable et authentifié ($OVH_ENDPOINT)" ;;
     401|403) bad "OVHcloud AI Endpoints" "HTTP $HTTP — clé refusée" ;;

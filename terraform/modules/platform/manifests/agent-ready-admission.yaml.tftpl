@@ -6,6 +6,12 @@
 #   - namespaces : agentic.io/agent-ready=true et agentic.io/team = leur nom,
 #     sur l'objet créé ET sur l'objet existant (pas de « réétiquetage » de
 #     kagent ou de agentgateway-system pour l'attirer dans le périmètre) ;
+#     Pod Security « baseline » au moins, qu'on ne peut pas retirer (pas de pod
+#     privilégié, de hostPath ni de réseau de l'hôte : pas de prise de nœud) ;
+#     jamais un nom de la plateforme (pas de namespace pré-créé pour la piéger) ;
+#   - RoleBindings : vers agentic-team-deployer seulement, pour UN utilisateur
+#     (l'identité du pipeline de l'équipe), jamais le pipeline lui-même, un
+#     groupe ou un compte system: ;
 #   - quotas, limites, RoleBindings, Secrets : dans un namespace Agent Ready ;
 #   - Secrets dans agentgateway-system : vk-*, labels agentic.io/virtual-key
 #     et agentic.io/agent-ready (les clés de la plateforme restent hors d'atteinte).
@@ -48,6 +54,23 @@ spec:
           'agentic.io/agent-ready' in o.metadata.labels && o.metadata.labels['agentic.io/agent-ready'] == 'true' &&
           'agentic.io/team' in o.metadata.labels && o.metadata.labels['agentic.io/team'] == o.metadata.name)
       message: "namespace hors périmètre Agent Ready"
+    - expression: >-
+        request.resource.resource != 'namespaces' || request.operation == 'DELETE' ||
+        (has(object.metadata.labels) &&
+         'pod-security.kubernetes.io/enforce' in object.metadata.labels &&
+         object.metadata.labels['pod-security.kubernetes.io/enforce'] in ['baseline', 'restricted'])
+      message: "namespace d'équipe : pod-security.kubernetes.io/enforce=baseline (ou restricted) obligatoire"
+    - expression: >-
+        request.resource.resource != 'namespaces' ||
+        variables.objets.all(o, !(o.metadata.name in ${noms_reserves}) &&
+          !o.metadata.name.startsWith('kube-') && !o.metadata.name.startsWith('agentgateway'))
+      message: "nom de namespace réservé à la plateforme"
+    - expression: >-
+        request.resource.resource != 'rolebindings' ||
+        variables.objets.all(o, o.roleRef.kind == 'ClusterRole' && o.roleRef.name == 'agentic-team-deployer' &&
+          has(o.subjects) && size(o.subjects) == 1 &&
+          o.subjects.all(s, s.kind == 'User' && s.name != '${principal_id}' && !s.name.startsWith('system:')))
+      message: "RoleBinding : agentic-team-deployer pour l'identité du pipeline de l'équipe, rien d'autre"
     - expression: >-
         request.resource.resource != 'secrets' || variables.equipe ||
         (request.namespace == 'agentgateway-system' &&

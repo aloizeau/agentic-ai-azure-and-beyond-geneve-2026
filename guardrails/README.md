@@ -30,7 +30,7 @@ client ─► agentgateway ──(1) native regex guard ──(2) webhook ─►
 adapter/                  FastAPI service implementing the agentgateway webhook contract
   app/                    HTTP layer, NeMo backends (library | microservice), settings
   contract/               vendored webhook OpenAPI spec (responses are validated against it in tests)
-  tests/                  20 behaviour + contract tests (mock OpenAI server for LLM rails)
+  tests/                  behaviour + contract tests (mock OpenAI server for LLM rails)
 deploy/                   kustomize base — library mode, Apache-2.0 only
   rails/default           deterministic rails: regex + YARA injection, no LLM call
   rails/strict            default + `self check input/output` through the internal gateway
@@ -127,3 +127,4 @@ Consequences for this platform:
 - Microservice mode: the `status` values of a blocked check and the ConfigMap layout expected by `configStore.configMap` are not documented; the mapping is defensive.
 - The workload identity of the deployer-created proxy pods (for `auth.azure.workloadIdentity`) must be bound to the `agentgateway` managed identity.
 - `llm-assistant-groupe` in `guardrail-policies.yaml` is an example route for the strict profile.
+- Regexes are a first line of defence, not a DLP: case-insensitive and tolerant of space / dot / dash separators, they still miss encoded, split or paraphrased data. On `/request`, the newest `user` message is checked with its conversation, and every later non-`assistant` message (`tool` results, etc.) is checked on its own with the same profile — a secret or an indirect prompt injection returned by a tool is rejected like a user prompt (fail-closed on engine error). Request bodies above `MAX_BODY_BYTES` (default 1 MiB) get a 413 before parsing.

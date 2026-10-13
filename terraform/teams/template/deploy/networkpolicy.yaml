@@ -1,6 +1,7 @@
 # Le serveur MCP n'est joignable que par l'agent de l'équipe (même namespace),
-# par la passerelle et par le contrôleur kagent (qui lit la liste des outils).
-# Le reste du cluster ne le voit pas.
+# par les proxys de la passerelle et par le contrôleur kagent (qui lit la liste
+# des outils). Le reste du cluster ne le voit pas — y compris les autres pods
+# d'agentgateway-system et de kagent (agents de la plateforme, UI…).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -12,11 +13,84 @@ spec:
   ingress:
     - from:
         - podSelector: {}
+        # Proxys de la passerelle (backend mcp-equipes) : interne et public.
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: agentgateway-system
+          podSelector:
+            matchExpressions:
+              - { key: gateway.networking.k8s.io/gateway-name, operator: In, values: [agentgateway-proxy, agentgateway-public] }
+        # Contrôleur kagent (RemoteMCPServer : tools/list).
+        # VÉRIFIER (D-7) : labels du pod contrôleur dans le chart kagent épinglé
+        # (kagent.controller.selectorLabels : name=kagent, component=controller) :
+        # kubectl get pods -n kagent --show-labels
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kagent
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kagent
+              app.kubernetes.io/component: controller
+      ports:
+        - { port: 8080, protocol: TCP }
+---
+# Sorties de TOUS les pods de l'équipe (agent, serveur MCP, futurs outils).
+# Sans cette politique, un outil détourné par un prompt atteint n'importe quel
+# service interne, l'IMDS (169.254.169.254 : jeton de l'identité kubelet, bien
+# plus large que celle de l'équipe) ou le wireserver Azure (168.63.129.16).
+# Autorisé : DNS, son propre namespace, la passerelle, le contrôleur kagent, et
+# HTTPS vers Internet — Storage (point de terminaison public), Entra ID
+# (login.microsoftonline.com, échange du jeton Workload Identity), Foundry et
+# api.github.com sont des points de terminaison publics.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: equipe-sorties
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    # DNS (CoreDNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # L'agent appelle le serveur MCP de l'équipe (RemoteMCPServer, :8080).
+    - to:
+        - podSelector: {}
+    # La passerelle : /agents/v1 (ModelConfig passerelle-llm). Service :80 ;
+    # 8080 si le déployeur agentgateway décale le port du conteneur.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentgateway-system
+          podSelector:
+            matchExpressions:
+              - { key: gateway.networking.k8s.io/gateway-name, operator: In, values: [agentgateway-proxy, agentgateway-public] }
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 8080 }
+    # Rappels de l'agent vers le contrôleur kagent (sessions, tâches) : :8083.
+    - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kagent
       ports:
-        - { port: 8080, protocol: TCP }
+        - { protocol: TCP, port: 8083 }
+    # HTTPS public uniquement : jamais le réseau interne ni les adresses
+    # spéciales Azure (IMDS, wireserver, CGNAT des overlays).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 168.63.129.16/32
+              - 100.64.0.0/10
+      ports:
+        - { protocol: TCP, port: 443 }

@@ -24,8 +24,21 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: mcp
-          image: mcp/grafana:latest          # VÉRIFIER (registre/tag), puis épingler un digest
-          args: ["-t", "streamable-http", "-address", "0.0.0.0:9000"]
+          # VÉRIFIER (D-7) : tag non résolu depuis l'environnement de revue (Docker Hub
+          # injoignable). Image officielle : grafana/mcp-grafana ; épingler une
+          # version exacte (vX.Y.Z) puis un digest — jamais latest le jour J.
+          image: mcp/grafana:latest
+          # --disable-write : lecture seule (pas de création/modification de
+          # dashboards, pas de SQL brut). --allowed-hosts : le Host reçu derrière
+          # la passerelle est le nom du Service (sinon 403 par défaut).
+          args:
+            - "-t"
+            - "streamable-http"
+            - "-address"
+            - "0.0.0.0:9000"
+            - "--disable-write"
+            - "--allowed-hosts"
+            - "mcp-grafana.outils-entreprise.svc.cluster.local:9000,mcp-grafana.outils-entreprise.svc.cluster.local"   # VÉRIFIER le Host envoyé par la passerelle
           envFrom:
             - secretRef: { name: grafana-mcp-credentials }   # GRAFANA_URL, GRAFANA_API_KEY
           ports: [{ containerPort: 9000 }]
@@ -74,8 +87,36 @@ spec:
         - name: mcp
           image: node:22-bookworm-slim       # VÉRIFIER, puis épingler un digest
           command: ["npx"]
-          # VÉRIFIER le nom exact du transport/port d'@azure/mcp (server start).
-          args: ["-y", "@azure/mcp@latest", "server", "start", "--transport", "streamable-http", "--port", "9000"]
+          # Version exacte (npm view @azure/mcp version, 2026-10-13) : jamais
+          # @latest, un dépôt public ne doit pas exécuter ce qui sort demain.
+          # VÉRIFIER (D-7) : 3.0.0 est une majeure publiée la veille de l'audit ;
+          # la doc (azmcp-commands.md) donne --transport stdio|http (pas
+          # « streamable-http »), pas d'option --port (ASPNETCORE_URLS), HTTP
+          # réservé à certaines builds et auth entrante obligatoire sauf
+          # --dangerously-disable-http-incoming-auth. Variante éprouvée :
+          # image mcr.microsoft.com/azure-sdk/azure-mcp (demos/D-agent-ops).
+          # --read-only + 4 domaines seulement : on « visualise » Azure, on ne le
+          # modifie pas, quel que soit le rôle du principal de service.
+          args:
+            - "-y"
+            - "@azure/mcp@3.0.0"
+            - "server"
+            - "start"
+            - "--transport"
+            - "streamable-http"
+            - "--port"
+            - "9000"
+            - "--read-only"
+            - "--mode"
+            - "namespace"
+            - "--namespace"
+            - "aks"
+            - "--namespace"
+            - "group"
+            - "--namespace"
+            - "monitor"
+            - "--namespace"
+            - "resourcehealth"
           env:
             - { name: HOME, value: /tmp }
             - { name: npm_config_cache, value: /tmp/.npm }
@@ -108,6 +149,14 @@ spec:
   ports: [{ port: 9000, targetPort: 9000 }]
 ---
 # Microsoft Graph / M365 — « visualiser SharePoint / OneDrive / Teams ».
+#
+# ⚠️ ATTENTION — À LAISSER DÉSACTIVÉ dans le dépôt public (enable_enterprise_tools).
+# Identifiants app-only (secret + consentement admin) : CHAQUE utilisateur
+# LibreChat voit tout ce que l'APPLICATION voit — tous les sites SharePoint,
+# OneDrive, équipes du tenant autorisés à l'app — sans tenir compte de ses
+# propres droits. La passerelle authentifie la personne, mais Graph ne voit que
+# l'app. À n'activer qu'avec des permissions Sites.Selected (sites listés
+# explicitement) ou en délégué / On-Behalf-Of (--obo), jamais Sites.Read.All.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -130,8 +179,11 @@ spec:
         - name: mcp
           image: node:22-bookworm-slim       # VÉRIFIER, puis épingler un digest
           command: ["npx"]
-          # VÉRIFIER le flag http/port de @softeria/ms-365-mcp-server.
-          args: ["-y", "@softeria/ms-365-mcp-server", "--http", "9000"]
+          # Version exacte (npm view @softeria/ms-365-mcp-server version, 2026-10-13).
+          # --read-only : outils de lecture seulement (pas d'envoi, pas d'écriture).
+          # VÉRIFIER (D-7) : en --http le serveur attend un jeton OAuth par requête
+          # (README) ; vérifier la cohabitation avec les identifiants app-only.
+          args: ["-y", "@softeria/ms-365-mcp-server@0.162.0", "--http", "9000", "--read-only"]
           env:
             - { name: HOME, value: /tmp }
             - { name: npm_config_cache, value: /tmp/.npm }

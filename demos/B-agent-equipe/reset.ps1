@@ -54,13 +54,13 @@ try {
   $env:TF_VAR_equipe = $Equipe
   $env:TF_VAR_github_owner = $platformRepo.Split("/")[0]
   $env:TF_VAR_platform_repository = $platformRepo
-  $env:TF_VAR_platform_state = "{ resource_group_name = `"$stateRg`", storage_account_name = `"$stateAccount`" }"
+  $env:TF_VAR_plateforme = ((terraform "-chdir=$($script:TfDir)" output -json plateforme_pour_equipes) -join "")
   $env:TF_VAR_kubeconfig_path = $kubeconfig
   Invoke-Native { terraform "-chdir=$teams" destroy -input=false -auto-approve } "terraform destroy"
   Ok "équipe $Equipe supprimée"
 } finally {
   if ($ownToken) { Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue }
-  foreach ($v in "TF_VAR_equipe", "TF_VAR_github_owner", "TF_VAR_platform_repository", "TF_VAR_platform_state", "TF_VAR_kubeconfig_path") {
+  foreach ($v in "TF_VAR_equipe", "TF_VAR_github_owner", "TF_VAR_platform_repository", "TF_VAR_plateforme", "TF_VAR_kubeconfig_path") {
     Remove-Item "Env:$v" -ErrorAction SilentlyContinue
   }
 }

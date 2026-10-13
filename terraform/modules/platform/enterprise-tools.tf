@@ -4,7 +4,7 @@
 # Self-hosted servers (Grafana, Azure, Microsoft Graph) applied from
 # tools/enterprise/deploy: pods in `outils-entreprise`, one AgentgatewayBackend
 # + HTTPRoute each in agentgateway-system (/mcp-grafana, /mcp-azure, /mcp-graph),
-# covered by the acces-llm policy. Their credentials are created out of band by
+# covered by the acces-outils policy. Their credentials are created out of band by
 # tools/enterprise/run.sh (Secrets, never committed) — pods stay Pending until
 # then. GitHub (per-user OAuth) and Microsoft Learn (no auth) are direct
 # LibreChat MCP servers (see librechat.tf), no pod here.
@@ -36,5 +36,5 @@ resource "terraform_data" "enterprise_tools" {
     command    = "kubectl delete -k ../tools/enterprise/deploy --ignore-not-found --wait=false"
   }
 
-  depends_on = [terraform_data.gateway_core] # Gateway agentgateway-proxy (parentRef) + acces-llm
+  depends_on = [terraform_data.gateway_core] # Gateway agentgateway-proxy (parentRef) + acces-outils
 }

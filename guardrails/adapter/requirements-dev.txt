@@ -1,5 +1,6 @@
+# Versions exactes ; régénérer avec les empreintes via `pip-compile --generate-hashes`.
 -r requirements.txt
-pytest>=8
-pytest-asyncio>=0.23
-jsonschema>=4.22
-pyyaml>=6
+pytest==9.1.1
+pytest-asyncio==1.4.0
+jsonschema==4.26.0
+pyyaml==6.0.3

@@ -8,10 +8,12 @@ kubectl get ns "$NS" && kubectl -n "$NS" get secret gateway-key -o name
 
 if ! kubectl -n "$NS" get secret jira-credentials >/dev/null 2>&1; then
   : "${JIRA_URL:?export JIRA_URL, JIRA_USERNAME and JIRA_API_TOKEN (Jira Cloud) before the demo}"
+  : "${JIRA_USERNAME:?}" "${JIRA_API_TOKEN:?}"
+  # --from-env-file + substitution de processus : les valeurs ne passent jamais
+  # sur la ligne de commande de kubectl (visible dans `ps`). printf est un builtin.
   kubectl -n "$NS" create secret generic jira-credentials \
-    --from-literal=JIRA_URL="$JIRA_URL" \
-    --from-literal=JIRA_USERNAME="${JIRA_USERNAME:?}" \
-    --from-literal=JIRA_API_TOKEN="${JIRA_API_TOKEN:?}" >/dev/null
+    --from-env-file=<(printf 'JIRA_URL=%s\nJIRA_USERNAME=%s\nJIRA_API_TOKEN=%s\n' \
+                        "$JIRA_URL" "$JIRA_USERNAME" "$JIRA_API_TOKEN") >/dev/null
   ok "Secret jira-credentials créé (hors dépôt)"
 fi
 pause

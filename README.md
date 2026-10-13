@@ -152,8 +152,8 @@ See [GitHub setup](#github-setup) below: one bootstrap script, five repository v
 | # | Where | What |
 |---|---|---|
 | 1 | GitHub | Create the repository (private until the talk), push `main`. |
-| 2 | Your terminal | `az login`, then `GITHUB_REPO=<owner>/<repo> ./scripts/bootstrap-state.sh`. It creates the state storage account (Entra auth only), a user-assigned managed identity with federated credentials for this repository (pull requests, `main`, environment `demo`), and its roles: Contributor, Role Based Access Control Administrator, Storage Blob Data Contributor on the state. |
-| 3 | Settings → Secrets and variables → Actions → **Variables** | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `TFSTATE_RG`, `TFSTATE_ACCOUNT` — values printed by the script. Variables, not secrets: none of them is sensitive. |
+| 2 | Your terminal | `az login`, then `GITHUB_REPO=<owner>/<repo> ./scripts/bootstrap-state.sh`. It creates the state storage account (Entra auth only) and two user-assigned managed identities: `id-<prefix>-github-plan`, federated with pull requests — Reader, state Reader; `id-<prefix>-github`, federated with environment `demo` only — Contributor, Resource Policy Contributor, Role Based Access Control Administrator under an ABAC condition (the roles the platform assigns, to service principals only: never Owner, never a person), Storage Blob Data Contributor on the state. No credential for a branch: a push or a merge never runs with the apply identity. |
+| 3 | Settings → Secrets and variables → Actions → **Variables** | `AZURE_CLIENT_ID` (environment `demo`), `AZURE_CLIENT_ID_PLAN` (pull requests), `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `TFSTATE_RG`, `TFSTATE_ACCOUNT` — values printed by the script. Variables, not secrets: none of them is sensitive. The pull-request job logs in with `AZURE_CLIENT_ID_PLAN` and plans phase 1; phase 2 is planned in the environment. |
 | 4 | Settings → **Environments** | Create `demo`, add yourself as required reviewer, restrict deployment branches to `main`. `apply` and `destroy` wait for your approval. |
 | 5 | Settings → Actions → General | Workflow permissions: read repository contents (the workflows request `id-token: write` themselves). Allow GitHub Actions to create and approve pull requests: off. |
 | 6 | Settings → Branches | Protect `main`: pull request required, status check `terraform / lint` required. |
@@ -177,8 +177,10 @@ Authentication is OIDC federation end to end: no client secret, no storage key, 
 | `teams` | `["equipe-produit"]` | Teams onboarded: namespace + gateway virtual key for their agents |
 | `ai_team_github_repository` | `null` | `owner/repo` of this repository: identity of the AI team's « Agent Ready » pipeline (environment `ai-team`), with bounded Azure and Kubernetes rights (démo B) |
 | `aks_admin_group_object_ids` | `[]` | Entra ID groups bound to cluster-admin (Entra ID authentication is on; the presenter and Terraform use the admin kubeconfig) |
+| `authorized_principal_object_ids` | `[]` | Users or groups allowed to sign in to the gateway API, LibreChat and the portal. Every one of these apps requires an assignment: besides the identity running Terraform, nobody gets in until listed here |
+| `aks_api_authorized_ip_ranges` | `[]` | CIDR ranges allowed to reach the AKS API server; empty = the internet, authentication only. Set your workstation and CI egress ranges |
 | `usage_metrics_per_user` | `true` | `user` label on the gateway metrics (usage dashboard per person); set `false` for thousands of users — team, model, cost and tools remain |
-| `public_exposure` | `null` | `{ zone, subdomain = "demos", acme_email, expose_api = true }`: LibreChat, Grafana, kagent UI and the LLM API on HTTPS under `<subdomain>.<zone>`; `null` = nothing public, port-forward only |
+| `public_exposure` | `null` | `{ zone, subdomain = "demos", acme_email, expose_api = false }`: LibreChat, Grafana and the kagent UI on HTTPS under `<subdomain>.<zone>`, plus the LLM API with `expose_api = true`; `null` = nothing public, port-forward only |
 | `enable_nemo_guardrails` | `false` | NeMo Guardrails behind the gateway (R&D target; production today uses Foundry content filters). Build the adapter image first: the webhook is fail-closed |
 | `guardrail_adapter_image` | ghcr placeholder | Image built by `guardrail-adapter.yml` |
 | `enable_self_hosted_models` | `false` | KAITO add-on + Phi-4-mini on a GPU node, route `/aks/v1` |
@@ -203,7 +205,11 @@ Retail prices (Azure Retail Prices API, Sweden Central, Linux, 730 h/month), che
 - Keyless end to end: Foundry has `local_auth_enabled = false`; the gateway and kagent use AKS Workload Identity; Terraform state uses Entra auth with shared keys disabled.
 - The gateway validates Entra ID v2 tokens (`requested_access_token_version = 2`); requests without a valid token never reach a model.
 - Only the gateway proxies can reach the guardrail adapter and the self-hosted model (NetworkPolicies, Cilium).
-- Public exposure (optional) adds four HTTPS entry points on one IP; every one of them requires Entra ID (or a team key for `/agents/v1`). Grafana and the kagent UI are never routed directly, only through oauth2-proxy. Set `expose_api = false` to keep the LLM API private.
+- Only assigned users and groups sign in (`authorized_principal_object_ids`): the gateway API, LibreChat and the portal all require an Entra ID app role assignment — the rest of the tenant, guests included, is refused by Entra ID.
+- Public exposure (optional) adds three HTTPS entry points on one IP — four with `expose_api = true` (off by default); every one of them requires Entra ID (or a team key for `/agents/v1`). Grafana and the kagent UI are never routed directly, only through oauth2-proxy; Grafana only accepts its header sign-in from inside the monitoring namespace (NetworkPolicy), and new users are Viewers.
+- Tools are allow-listed per route at the gateway (`gateway/deploy/autorisations-mcp.yaml`): people see `list_agents`, `invoke_agent` and the read tools of team MCP servers, never their write tools.
+- Team namespaces enforce Pod Security `baseline` and accept only ClusterIP Services with a selector (admission policies `agent-ready-perimetre`, `equipes-services`); the kagent, agentregistry and Grafana pods only accept the callers they need (`terraform/modules/platform/network-policies.tf`).
+- The security review of October 2026 and what it changed: [SECURITE.md](SECURITE.md).
 
 ## Known limits
 

@@ -101,9 +101,30 @@ output "acr_login_server" {
 }
 
 # -----------------------------------------------------------------------------
-# Read by the « Agent Ready » stack (terraform/teams) through terraform_remote_state.
-# Nothing secret: the API server CA certificate is public material.
+# What the « Agent Ready » stack (terraform/teams) needs from the platform.
+# Nothing secret: the API server CA certificate is public material. The AI team
+# pipeline gets these values as one GitHub variable (PLATEFORME, set by
+# demos/B-agent-equipe/prepare.ps1) — never the platform state, which holds
+# the admin kubeconfig and the Entra app secrets.
 # -----------------------------------------------------------------------------
+output "plateforme_pour_equipes" {
+  value = {
+    subscription_id           = data.azurerm_client_config.current.subscription_id
+    tenant_id                 = data.azurerm_client_config.current.tenant_id
+    location                  = var.location
+    resource_group_name       = module.foundation.resource_group_name
+    teams_resource_group_name = module.agent_ready.teams_resource_group_name
+    acr_id                    = module.foundation.acr_id
+    acr_name                  = module.foundation.acr_name
+    acr_login_server          = module.foundation.acr_login_server
+    aks_cluster_id            = module.foundation.cluster_id
+    aks_cluster_name          = module.foundation.cluster_name
+    aks_oidc_issuer_url       = module.foundation.oidc_issuer_url
+    aks_api_server            = module.foundation.api_server
+    aks_ca_certificate        = module.foundation.ca_certificate
+  }
+}
+
 output "subscription_id" { value = data.azurerm_client_config.current.subscription_id }
 output "tenant_id" { value = data.azurerm_client_config.current.tenant_id }
 output "location" { value = var.location }

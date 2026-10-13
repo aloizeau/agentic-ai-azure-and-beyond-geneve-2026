@@ -7,6 +7,7 @@
 param([switch]$AutoApprove)
 
 $ErrorActionPreference = "Stop"
+$ownCloudflareToken = $false
 $TfDir = Join-Path (Split-Path $PSScriptRoot -Parent) "terraform"
 
 $account = az account show -o json | ConvertFrom-Json
@@ -17,6 +18,7 @@ $tfvars = Join-Path $TfDir "terraform.tfvars"
 if ((Test-Path $tfvars) -and (Select-String -Path $tfvars -Pattern '^\s*public_exposure\s*=' -Quiet) -and -not $env:CLOUDFLARE_API_TOKEN) {
   $secure = Read-Host "Jeton d'API Cloudflare (pour supprimer les enregistrements DNS)" -AsSecureString
   $env:CLOUDFLARE_API_TOKEN = [System.Net.NetworkCredential]::new("", $secure).Password
+  $ownCloudflareToken = $true   # retiré de l'environnement en fin de script
 }
 
 Push-Location $TfDir
@@ -26,8 +28,11 @@ try {
 
   # Best effort: kubectl access lets the KAITO Workspace be released cleanly.
   $ErrorActionPreference = "Continue"
-  $getCreds = terraform output -raw aks_get_credentials 2>$null
-  if ($LASTEXITCODE -eq 0 -and $getCreds) { Invoke-Expression $getCreds 2>$null | Out-Null }
+  $aksRg = terraform output -raw resource_group_name 2>$null
+  $aksName = terraform output -raw aks_cluster_name 2>$null
+  if ($LASTEXITCODE -eq 0 -and $aksRg -and $aksName) {
+    az aks get-credentials --resource-group $aksRg --name $aksName --admin --overwrite-existing 2>$null | Out-Null
+  }
   $ErrorActionPreference = "Stop"
 
   if (-not $AutoApprove) {
@@ -38,4 +43,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "terraform destroy a échoué — relancez le script." }
   Write-Host "Détruit. L'état reste dans rg-*-tfstate (quelques centimes par mois)." -ForegroundColor Green
 }
-finally { Pop-Location }
+finally {
+  Pop-Location
+  if ($ownCloudflareToken) { Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue }
+}

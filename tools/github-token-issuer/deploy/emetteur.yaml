@@ -1,0 +1,110 @@
+# ---------------------------------------------------------------------------
+# Émetteur de jetons GitHub de la plateforme (démo D) — namespace jetons-github.
+# La clé privée de l'application GitHub (Secret github-app, posé par
+# demos/D-agent-ops/prepare.ps1) ne sort jamais de ce namespace. Les équipes
+# reçoivent un jeton d'une heure, limité à leur dépôt et à issues:write.
+# Marqueurs __X__ remplacés par prepare.ps1 dans une copie temporaire.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jetons-github
+  labels:
+    agentic.io/plateforme: "true"
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: emetteur-jetons-github
+  namespace: jetons-github
+automountServiceAccountToken: true
+---
+# Lister les namespaces ; lire et modifier les seuls Secrets nommés
+# github-token (créés vides par Agent Ready). Ni create, ni list de Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: emetteur-jetons-github
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["github-token"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: emetteur-jetons-github
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: emetteur-jetons-github
+subjects:
+  - kind: ServiceAccount
+    name: emetteur-jetons-github
+    namespace: jetons-github
+---
+# Jeton valable 1 h, renouvelé toutes les 30 min : toujours au moins 30 min de marge.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: emetteur-jetons-github
+  namespace: jetons-github
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels: { app: emetteur-jetons-github }
+        spec:
+          serviceAccountName: emetteur-jetons-github
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: emetteur
+              image: __IMAGE__
+              env:
+                - { name: GITHUB_OWNER, value: __GITHUB_OWNER__ }
+                - name: GITHUB_APP_ID
+                  valueFrom:
+                    secretKeyRef: { name: github-app, key: app-id }
+                - { name: GITHUB_APP_PRIVATE_KEY_PATH, value: /var/run/github-app/private-key }
+              volumeMounts:
+                - { name: github-app, mountPath: /var/run/github-app, readOnly: true }
+              resources:
+                requests: { cpu: 20m, memory: 64Mi }
+                limits: { memory: 128Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+          volumes:
+            - name: github-app
+              secret:
+                secretName: github-app
+                items: [{ key: private-key, path: private-key }]
+                defaultMode: 0400
+---
+# Aucune entrée : personne n'a à joindre l'émetteur.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aucune-entree
+  namespace: jetons-github
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

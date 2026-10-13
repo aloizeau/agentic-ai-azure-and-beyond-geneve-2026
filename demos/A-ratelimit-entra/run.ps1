@@ -40,56 +40,75 @@ function Show-Yaml([string]$File, [string]$From) {
 Start-Gateway
 $prompt = "En deux phrases : pourquoi faut-il gouverner l'accès aux LLM ?"
 
-# -----------------------------------------------------------------------------
-Step "0 · Une route ouverte « pour aller vite » : même modèle, aucune politique"
-Show-Yaml "1-route-ouverte.yaml" "^apiVersion"
-Invoke-Native { kubectl apply -f (Join-Path $here "1-route-ouverte.yaml") } "route ouverte"
-Start-Sleep -Seconds 3
-Wait-Demo
+# Si la démo s'arrête avant la fin (erreur, Ctrl+C), la route /demo/v1 peut
+# rester ouverte : sans jeton, sans plafond, sans garde-fou. Le finally la
+# retire alors (même suppression que reset.ps1). En fin normale, rien ne change :
+# reset.ps1 reste l'étape de remise à zéro documentée.
+$demoTerminee = $false
+try {
+  # -----------------------------------------------------------------------------
+  Step "0 · Une route ouverte « pour aller vite » : même modèle, aucune politique"
+  Show-Yaml "1-route-ouverte.yaml" "^apiVersion"
+  Invoke-Native { kubectl apply -f (Join-Path $here "1-route-ouverte.yaml") } "route ouverte"
+  Start-Sleep -Seconds 3
+  Wait-Demo
 
-Step "1 · Sans jeton, sans limite : n'importe qui consomme"
-for ($i = 1; $i -le 3; $i++) {
-  Info "appel $i — anonyme"
+  Step "1 · Sans jeton, sans limite : n'importe qui consomme"
+  for ($i = 1; $i -le 3; $i++) {
+    Info "appel $i — anonyme"
+    [void](Invoke-Chat -Path "/demo/v1" -Prompt $prompt)
+  }
+  Expect-Code "^2" "le modèle répond à tout le monde — la facture aussi" "attendu 200, reçu $($script:LastCode)"
+  Info "« Vendredi soir, la clé fuit… » : rien dans ce chemin ne sait qui appelle ni combien."
+  Wait-Demo
+
+  # -----------------------------------------------------------------------------
+  Step "2 · Un jeton Entra ID obligatoire — une politique, attachée à la route"
+  Show-Yaml "2-jeton-entra.yaml" "^spec:"
+  Invoke-KubectlApply (Get-PolicyYaml "2-jeton-entra.yaml") "politique jeton Entra"
+  Start-Sleep -Seconds 3
+
+  Info "sans jeton :"
   [void](Invoke-Chat -Path "/demo/v1" -Prompt $prompt)
+  Expect-Code "^401$" "401 — refusé à la porte, le modèle n'est jamais appelé" "attendu 401, reçu $($script:LastCode)"
+
+  $token = Get-UserToken
+  Info ("avec mon jeton Entra ID ({0}) :" -f (Get-TokenClaim $token "preferred_username"))
+  [void](Invoke-Chat -Path "/demo/v1" -Prompt $prompt -Token $token)
+  Expect-Code "^2" "accepté — et la passerelle sait désormais QUI consomme" "attendu 200, reçu $($script:LastCode)"
+  Wait-Demo
+
+  # -----------------------------------------------------------------------------
+  Step "3 · Un plafond : 400 jetons LLM par minute sur cette route"
+  Show-Yaml "3-plafond.yaml" "rateLimit"
+  Invoke-KubectlApply (Get-PolicyYaml "3-plafond.yaml") "plafond"
+  Start-Sleep -Seconds 3
+  $hit = $false
+  for ($i = 1; $i -le 8; $i++) {
+    Info "appel $i"
+    [void](Invoke-Chat -Path "/demo/v1" -Prompt "Écris trois phrases sur les Alpes suisses." -Token $token -MaxTokens 150)
+    if ($script:LastCode -eq 429) { $hit = $true; break }
+  }
+  if ($hit) { Ok "429 — la dépense s'arrête d'elle-même" } else { Ko "pas de 429 : le plafond est-il appliqué ? (kubectl -n $($script:NsGw) get agentgatewaypolicy protection-demo -o yaml)" }
+  Info "« … et lundi matin, on a une alerte, pas une facture. »"
+  Wait-Demo
+
+  # -----------------------------------------------------------------------------
+  Step "4 · Qui a consommé quoi : tableau de bord « Usage IA » (Grafana, dossier Plateforme IA)"
+  Info "http://localhost:3000/d/usage-ia — filtre Utilisateur = votre compte Entra ID :"
+  Info "les appels authentifiés, leur coût, les 401 (anonymes) et le 429."
+  Info "Grafana : kubectl -n monitoring port-forward svc/kps-grafana 3000:80"
+  Info "Remise à zéro : ./demos/A-ratelimit-entra/reset.ps1"
+  $demoTerminee = $true
 }
-Expect-Code "^2" "le modèle répond à tout le monde — la facture aussi" "attendu 200, reçu $($script:LastCode)"
-Info "« Vendredi soir, la clé fuit… » : rien dans ce chemin ne sait qui appelle ni combien."
-Wait-Demo
-
-# -----------------------------------------------------------------------------
-Step "2 · Un jeton Entra ID obligatoire — une politique, attachée à la route"
-Show-Yaml "2-jeton-entra.yaml" "^spec:"
-Invoke-KubectlApply (Get-PolicyYaml "2-jeton-entra.yaml") "politique jeton Entra"
-Start-Sleep -Seconds 3
-
-Info "sans jeton :"
-[void](Invoke-Chat -Path "/demo/v1" -Prompt $prompt)
-Expect-Code "^401$" "401 — refusé à la porte, le modèle n'est jamais appelé" "attendu 401, reçu $($script:LastCode)"
-
-$token = Get-UserToken
-Info ("avec mon jeton Entra ID ({0}) :" -f (Get-TokenClaim $token "preferred_username"))
-[void](Invoke-Chat -Path "/demo/v1" -Prompt $prompt -Token $token)
-Expect-Code "^2" "accepté — et la passerelle sait désormais QUI consomme" "attendu 200, reçu $($script:LastCode)"
-Wait-Demo
-
-# -----------------------------------------------------------------------------
-Step "3 · Un plafond : 400 jetons LLM par minute sur cette route"
-Show-Yaml "3-plafond.yaml" "rateLimit"
-Invoke-KubectlApply (Get-PolicyYaml "3-plafond.yaml") "plafond"
-Start-Sleep -Seconds 3
-$hit = $false
-for ($i = 1; $i -le 8; $i++) {
-  Info "appel $i"
-  [void](Invoke-Chat -Path "/demo/v1" -Prompt "Écris trois phrases sur les Alpes suisses." -Token $token -MaxTokens 150)
-  if ($script:LastCode -eq 429) { $hit = $true; break }
+finally {
+  if (-not $demoTerminee) {
+    Write-Warning "Démo interrompue : suppression de la route ouverte /demo/v1 et de sa politique."
+    try {
+      & kubectl -n $script:NsGw delete agentgatewaypolicy,httproute -l app.kubernetes.io/part-of=demo-a --ignore-not-found
+    }
+    catch {
+      Write-Warning "Échec du nettoyage : lancer ./demos/A-ratelimit-entra/reset.ps1 ($($_.Exception.Message))"
+    }
+  }
 }
-if ($hit) { Ok "429 — la dépense s'arrête d'elle-même" } else { Ko "pas de 429 : le plafond est-il appliqué ? (kubectl -n $($script:NsGw) get agentgatewaypolicy protection-demo -o yaml)" }
-Info "« … et lundi matin, on a une alerte, pas une facture. »"
-Wait-Demo
-
-# -----------------------------------------------------------------------------
-Step "4 · Qui a consommé quoi : tableau de bord « Usage IA » (Grafana, dossier Plateforme IA)"
-Info "http://localhost:3000/d/usage-ia — filtre Utilisateur = votre compte Entra ID :"
-Info "les appels authentifiés, leur coût, les 401 (anonymes) et le 429."
-Info "Grafana : kubectl -n monitoring port-forward svc/kps-grafana 3000:80"
-Info "Remise à zéro : ./demos/A-ratelimit-entra/reset.ps1"

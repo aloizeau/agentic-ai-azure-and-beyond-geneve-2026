@@ -1,6 +1,8 @@
-# Les tickets GitHub du serveur MCP de l'équipe : le dépôt cible, et
-# l'application GitHub de la plateforme (Secret « github-app », posé par
-# Agent Ready — l'équipe ne peut ni le lire ni l'écrire, son pod l'utilise).
+# Les tickets GitHub du serveur MCP de l'équipe : le dépôt cible, et le jeton
+# que l'émetteur de la plateforme (tools/github-token-issuer) écrit dans le
+# Secret github-token toutes les 30 minutes — valable une heure, pour CE dépôt
+# et issues:write seulement. La clé privée de l'application GitHub n'est
+# jamais dans ce namespace.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,16 +14,16 @@ spec:
         - name: docs-mcp
           env:
             - { name: GITHUB_REPOSITORY, value: __GITHUB_REPO__ }   # le dépôt de l'équipe, et lui seul
-            - name: GITHUB_APP_ID
-              valueFrom:
-                secretKeyRef: { name: github-app, key: app-id }
-            - { name: GITHUB_APP_PRIVATE_KEY_PATH, value: /var/run/github-app/private-key }
+            - { name: GITHUB_TOKEN_PATH, value: /var/run/github/token }
             - { name: TICKETS_MAX_CREATIONS, value: "5" }          # par fenêtre de 10 min
+            - { name: TICKETS_MAX_COMMENTAIRES, value: "10" }
           volumeMounts:
-            - { name: github-app, mountPath: /var/run/github-app, readOnly: true }
+            # Un Secret monté en volume est mis à jour sans redémarrer le pod.
+            - { name: github-token, mountPath: /var/run/github, readOnly: true }
       volumes:
-        - name: github-app
+        - name: github-token
           secret:
-            secretName: github-app
-            items: [{ key: private-key, path: private-key }]
+            secretName: github-token
+            items: [{ key: token, path: token }]
+            optional: true          # vide tant que l'émetteur n'est pas passé
             defaultMode: 0440

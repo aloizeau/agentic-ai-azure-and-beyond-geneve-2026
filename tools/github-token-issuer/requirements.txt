@@ -1,0 +1,4 @@
+# Versions exactes. Pour la production : pip-compile --generate-hashes, puis
+# pip install --require-hashes dans le Dockerfile.
+httpx==0.28.1
+PyJWT[crypto]==2.15.1

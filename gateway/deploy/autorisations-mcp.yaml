@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# Quels outils MCP les PERSONNES (LibreChat, jeton Entra ID) peuvent appeler.
+# Le jeton prouve « qui » (acces-outils, policies.yaml) ; ces listes blanches
+# disent « quoi ». Un outil hors liste disparaît du tools/list et son appel est
+# refusé par la passerelle : un outil ajouté plus tard par une équipe reste
+# fermé tant que la plateforme ne l'a pas ouvert (liste blanche, pas noire).
+# Expressions CEL en OU (même forme que demos/D-agent-ops/plateforme).
+#
+# Étape suivante, documentée et non faite ici : restreindre PAR ÉQUIPE (seuls
+# les membres de l'équipe X voient les outils et agents de X). Il faut pour cela
+# un claim de groupes Entra ID dans le jeton (groups ou roles, configuré sur
+# l'application API) puis une règle du type
+#   mcp.tool.name.startsWith("docs-x-") && "<id groupe X>" in jwt.groups
+# Sans ce claim, la passerelle ne sait pas à quelle équipe appartient un humain.
+# ---------------------------------------------------------------------------
+# /mcp — le contrôleur kagent : lister les agents et en interroger un. Tout
+# autre outil que le serveur kagent exposerait (création, suppression…) reste
+# fermé aux personnes.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: outils-agents-autorises
+spec:
+  targetRefs:
+    - { group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp }
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # Une seule cible (agents) : pas de préfixe par défaut ; la forme
+            # préfixée agents_* est listée au cas où prefixMode passerait à Always.
+            - 'mcp.tool.name in ["list_agents", "invoke_agent", "agents_list_agents", "agents_invoke_agent"]'
+---
+# /mcp-equipes — outils publiés par les équipes, préfixés par la cible
+# (prefixMode Always : docs-equipe-docs_rechercher). LECTURE SEULE pour les
+# personnes : créer ou commenter un ticket (ou tout outil d'écriture qu'une
+# équipe ajouterait) reste un geste de l'agent, avec approbation humaine dans
+# kagent — jamais un bouton ouvert à tout le tenant.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: outils-equipes-autorises
+spec:
+  targetRefs:
+    - { group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-equipes }
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'mcp.tool.name.endsWith("_lister_documents")'
+            - 'mcp.tool.name.endsWith("_lire_document")'
+            - 'mcp.tool.name.endsWith("_rechercher")'
+            - 'mcp.tool.name.endsWith("_lister_tickets")'

@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Démo D — préparation, une fois (J-1) : l'équipe IA publie les outils d'entreprise
-  pour les agents, et l'application GitHub des tickets.
+  pour les agents, et l'émetteur de jetons GitHub des tickets.
 
 .DESCRIPTION
   Prérequis : ./scripts/deploy.ps1, puis ./demos/B-agent-equipe/prepare.ps1 (démo D
@@ -14,8 +14,11 @@
        /agents/mcp-entreprise : Azure + Microsoft Learn derrière la passerelle, clé
        d'équipe obligatoire, Azure réservé aux équipes de -EquipesAzure.
     3. Vérification : sans clé 401 ; clé « platform » → Learn seulement.
-    4. Application GitHub des tickets (-GitHubAppId, -GitHubAppKeyPath) : secrets de
-       l'environnement « ai-team », lus par Agent Ready (TF_VAR_github_app_*).
+    4. Émetteur de jetons GitHub (tools/github-token-issuer) : image construite dans le
+       registre de la plateforme (az acr build), CronJob dans le namespace jetons-github,
+       seul endroit où vit la clé privée de l'application GitHub (-GitHubAppId,
+       -GitHubAppKeyPath). Toutes les 30 min, chaque équipe reçoit dans son Secret
+       github-token un jeton d'une heure limité à agent-<équipe> et issues:write.
 
   Application GitHub (une fois, à la main) : Settings → Developer settings → GitHub
   Apps → New. Webhook désactivé ; permissions de dépôt Issues : Read and write,
@@ -28,7 +31,10 @@
 #>
 [CmdletBinding()]
 param(
+  # Validés : ces noms sont insérés dans une règle CEL de la passerelle.
+  [ValidatePattern('^[a-z][a-z0-9-]{1,18}[a-z0-9]$')]
   [string[]]$EquipesAzure = @("equipe-ops"),
+  [ValidatePattern('^[0-9]{1,12}$')]
   [string]$GitHubAppId,
   [string]$GitHubAppKeyPath
 )
@@ -109,29 +115,40 @@ $platformKey = $null
 Info "Azure lui-même se vérifie avec la clé de l'équipe, dans run.ps1 (étape 3)."
 
 # -----------------------------------------------------------------------------
-Step "4 · Application GitHub des tickets → environnement « ai-team »"
+Step "4 · Émetteur de jetons GitHub : la clé reste dans jetons-github"
 Push-Location $script:RepoRoot
 try {
   $repo = (gh repo view --json nameWithOwner --jq .nameWithOwner)
-  if ($GitHubAppId -and $GitHubAppKeyPath) {
-    if (-not (Test-Path $GitHubAppKeyPath)) { throw "clé introuvable : $GitHubAppKeyPath" }
-    Invoke-Native { gh variable set TICKETS_GITHUB_APP_ID --env ai-team --body $GitHubAppId --repo $repo } "variable TICKETS_GITHUB_APP_ID"
-    Get-Content $GitHubAppKeyPath -Raw | gh secret set TICKETS_GITHUB_APP_PRIVATE_KEY --env ai-team --repo $repo
-    if ($LASTEXITCODE -ne 0) { throw "gh secret set" }
-    Ok "TICKETS_GITHUB_APP_ID, TICKETS_GITHUB_APP_PRIVATE_KEY (entrée standard de gh, rien sur disque)"
-  } else {
-    Info "-GitHubAppId / -GitHubAppKeyPath absents : étape sautée (run.ps1 peut poser le Secret lui-même)."
-  }
-  $wf = Join-Path $script:RepoRoot ".github\workflows\agent-ready.yml"
-  if ((Test-Path $wf) -and (Select-String -Path $wf -Pattern "TF_VAR_github_app_id" -Quiet)) {
-    Ok "agent-ready.yml transmet l'application GitHub à Terraform"
-  } else {
-    Ko "agent-ready.yml ne transmet pas encore l'application GitHub — ajouter à l'étape terraform :"
-    Show-Code @'
-        env:
-          TF_VAR_github_app_id: ${{ vars.TICKETS_GITHUB_APP_ID }}
-          TF_VAR_github_app_private_key: ${{ secrets.TICKETS_GITHUB_APP_PRIVATE_KEY }}
-'@
-  }
 } finally { Pop-Location }
+$owner = $repo.Split("/")[0]
+$acr = Get-TfOutput "acr_name"
+$loginServer = Get-TfOutput "acr_login_server"
+$tag = Get-Date -Format "yyyyMMddHHmmss"
+$image = "$loginServer/plateforme/github-token-issuer:$tag"
+Invoke-Native { az acr build -r $acr -t "plateforme/github-token-issuer:$tag" (Join-Path $script:RepoRoot "tools\github-token-issuer") -o none } "az acr build (émetteur)"
+Ok "image $image"
+
+$text = [IO.File]::ReadAllText((Join-Path $script:RepoRoot "tools\github-token-issuer\deploy\emetteur.yaml"))
+$text = $text.Replace("__IMAGE__", $image).Replace("__GITHUB_OWNER__", $owner)
+Invoke-KubectlApply $text "émetteur de jetons GitHub"
+
+if ($GitHubAppId -and $GitHubAppKeyPath) {
+  if (-not (Test-Path $GitHubAppKeyPath)) { throw "clé introuvable : $GitHubAppKeyPath" }
+  # Clé lue depuis le fichier par kubectl (jamais dans la ligne de commande), manifeste
+  # transmis par l'entrée standard, rien d'écrit sur disque.
+  $secret = kubectl -n jetons-github create secret generic github-app "--from-literal=app-id=$GitHubAppId" "--from-file=private-key=$GitHubAppKeyPath" --dry-run=client -o yaml
+  if ($LASTEXITCODE -ne 0) { throw "kubectl create secret (dry-run)" }
+  Invoke-KubectlApply ($secret -join "`n") "Secret github-app"
+  $secret = $null
+  Ok "clé de l'application dans jetons-github/github-app — supprimez maintenant le fichier .pem de ce poste"
+} elseif (-not (Test-Native { kubectl -n jetons-github get secret github-app })) {
+  Ko "Secret jetons-github/github-app absent : relancer avec -GitHubAppId <id> -GitHubAppKeyPath <clé.pem>"
+}
+
+# Un premier passage tout de suite, sans attendre la demi-heure.
+$job = "emetteur-manuel-$tag"
+Invoke-Native { kubectl -n jetons-github create job --from=cronjob/emetteur-jetons-github $job | Out-Null } "premier passage de l'émetteur"
+if (Test-Native { kubectl -n jetons-github wait --for=condition=complete "job/$job" --timeout=120s }) {
+  Ok "premier passage terminé (équipes sans Secret github-token : ignorées jusqu'à leur Agent Ready)"
+} else { Ko "premier passage en échec : kubectl -n jetons-github logs job/$job" }
 Info "Démo : ./demos/D-agent-ops/run.ps1"

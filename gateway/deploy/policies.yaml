@@ -5,7 +5,13 @@
 # ---------------------------------------------------------------------------
 
 # People (LibreChat): a valid Entra ID v2 access token, or nothing (démo A : 401).
-# Same rule for the models (/v1) and for the tools (/mcp).
+# Deux politiques, même règle d'identité, plafond adapté à ce qui passe :
+#   acces-llm     routes LLM (/v1)  : plafond en jetons LLM
+#   acces-outils  routes MCP        : plafond en requêtes (un plafond `tokens`
+#                 n'y compte rien : un appel d'outil ne produit pas de jetons LLM)
+# Chaque route « personnes » est couverte par UNE seule de ces deux politiques.
+# Émetteur, audience et JWKS : patchés par Terraform (modules/platform/gateway.tf)
+# — la même entrée de patch doit viser acces-llm ET acces-outils.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
@@ -13,12 +19,6 @@ metadata:
 spec:
   targetRefs:
     - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm }
-    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp }
-    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-web }           # recherche web (DuckDuckGo)
-    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-equipes }       # outils publiés par les équipes (démo B)
-    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-grafana }       # outils d'entreprise (option)
-    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-azure }         # outils d'entreprise (option)
-    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-graph }         # outils d'entreprise (option)
     - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-public }       # gateway/public, optional
   traffic:
     jwtAuthentication:
@@ -31,7 +31,36 @@ spec:
               url: https://login.microsoftonline.com/TENANT_ID/discovery/v2.0/keys
     rateLimit:
       local:
-        - tokens: 50000                           # ceiling per route (démo A : 429)
+        - tokens: 50000                           # ceiling per route (démo A : 429) — démo C patche local/0/tokens
+          unit: Minutes
+---
+# Outils (MCP) pour les personnes : même jeton Entra ID que /v1, plafond en
+# requêtes (par route et par réplica du proxy). 120/min laisse un usage normal
+# de LibreChat (tools/list + quelques appels par message) et coupe une boucle.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: acces-outils
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp }               # agents kagent (list_agents, invoke_agent)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-web }           # recherche web (DuckDuckGo)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-equipes }       # outils publiés par les équipes (démo B)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-grafana }       # outils d'entreprise (option)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-azure }         # outils d'entreprise (option)
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: mcp-graph }         # outils d'entreprise (option)
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: https://login.microsoftonline.com/TENANT_ID/v2.0
+          audiences: [GATEWAY_API_CLIENT_ID]      # v2 tokens: aud = client-ID GUID
+          jwks:
+            remote:
+              url: https://login.microsoftonline.com/TENANT_ID/discovery/v2.0/keys
+    rateLimit:
+      local:
+        - requests: 120                           # requêtes MCP par minute et par route
           unit: Minutes
 ---
 # Agents: one virtual key per team (Secrets labelled agentic.io/virtual-key,

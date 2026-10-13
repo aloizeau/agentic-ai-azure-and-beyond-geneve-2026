@@ -1,6 +1,10 @@
 # Ingress : seuls les pods de la gateway atteignent ces serveurs MCP.
 # Egress : DNS partout ; Grafana reste interne (namespace monitoring), Azure et
 # Graph sortent sur Internet 443 mais jamais vers le réseau interne (SSRF).
+# Exclus de 0.0.0.0/0 : plages privées, 169.254.0.0/16 (IMDS, jeton de
+# l'identité kubelet), 168.63.129.16 (wireserver/DNS Azure, IP publique donc
+# non couverte par les plages privées) et 100.64.0.0/10 (CGNAT, utilisé par
+# certains overlays / services internes).
 # ---------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -47,7 +51,7 @@ spec:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
-            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 168.63.129.16/32, 100.64.0.0/10]
       ports: [{ protocol: TCP, port: 443 }]
 ---
 apiVersion: networking.k8s.io/v1
@@ -72,5 +76,5 @@ spec:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
-            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 168.63.129.16/32, 100.64.0.0/10]
       ports: [{ protocol: TCP, port: 443 }]

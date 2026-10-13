@@ -35,6 +35,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$script:OwnCloudflareToken = $false
 $Root = Split-Path $PSScriptRoot -Parent
 $TfDir = Join-Path $Root "terraform"
 
@@ -213,10 +214,13 @@ Get-Content $tfvars | ForEach-Object { Write-Host "    $_" }
 if ($hasPublic) {
   Step "Cloudflare (exposition publique)"
   if ($PSVersionTable.PSVersion.Major -lt 6) { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
-  # Le jeton reste dans cette session PowerShell : jamais écrit sur disque.
+  # Jamais écrit sur disque. Saisi ici, il est retiré de l'environnement à la
+  # fin du script (bloc finally) : les commandes lancées ensuite dans cette
+  # session PowerShell n'en héritent pas.
   if (-not $env:CLOUDFLARE_API_TOKEN) {
     $secure = Read-Host "Jeton d'API Cloudflare (Zone:Read + DNS:Edit sur la zone)" -AsSecureString
     $env:CLOUDFLARE_API_TOKEN = [System.Net.NetworkCredential]::new("", $secure).Password
+    $script:OwnCloudflareToken = $true
   }
   $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
   $zoneName = if ($PublicZone) { $PublicZone } else {
@@ -243,8 +247,11 @@ try {
   Invoke-Native { terraform apply -input=false phase1.tfplan } "terraform apply (phase 1)"
 
   Step "Identifiants kubectl"
-  $getCreds = terraform output -raw aks_get_credentials
-  Invoke-Native { Invoke-Expression $getCreds } "az aks get-credentials"
+  # Names read from the state, passed as separate arguments: nothing from the
+  # state is ever executed as a command line.
+  $aksRg = terraform output -raw resource_group_name
+  $aksName = terraform output -raw aks_cluster_name
+  Invoke-Native { az aks get-credentials --resource-group $aksRg --name $aksName --admin --overwrite-existing } "az aks get-credentials"
   Invoke-Native { kubectl get nodes -o wide } "kubectl get nodes"
 
   if ($Phase1Only) { Step "Phase 1 terminée (-Phase1Only)."; return }
@@ -271,6 +278,7 @@ try {
   Write-Host "    Tout détruire : ./scripts/destroy.ps1"
 }
 finally {
+  if ($script:OwnCloudflareToken) { Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue }
   Remove-Item -ErrorAction SilentlyContinue phase1.tfplan, phase2.tfplan
   Pop-Location
 }

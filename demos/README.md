@@ -19,7 +19,7 @@ Shared helpers: [`lib.ps1`](lib.ps1) (gateway port-forward, Entra token, chat an
 
 | When | What |
 |---|---|
-| D-14 | Foundry quota (`scripts/preflight.sh`); démo B: `ai_team_github_repository` in `terraform.tfvars`, fine-grained GitHub token for the AI team; démo D: GitHub App « tickets » (Issues read/write), `TF_VAR_github_app_*` in `agent-ready.yml` |
+| D-14 | Foundry quota (`scripts/preflight.sh`); démo B: `ai_team_github_repository` in `terraform.tfvars`, fine-grained GitHub token for the AI team; démo D: GitHub App « tickets » (Issues read/write, installed on the owner's repositories) |
 | D-7 | Full rehearsal with `$env:NO_PAUSE = "1"`, record the fallback videos; démo D: the `VÉRIFIER` checklist of its README |
 | D-1 | `./scripts/deploy.ps1`, then `./demos/B-agent-equipe/prepare.ps1` (once), `./demos/C-nemo-guardrails/prepare.ps1` and `./demos/D-agent-ops/prepare.ps1` |
 | H-10 min | Terminal font size up, `az login`, `gh auth status`, port-forwards below, LibreChat signed in, GitHub Actions open in the browser (approval) |
@@ -37,7 +37,7 @@ kubectl -n monitoring port-forward svc/kps-grafana 3000:80     # http://localhos
 ./demos/A-ratelimit-entra/run.ps1
 ./demos/B-agent-equipe/run.ps1          # -Equipe equipe-docs by default
 ./demos/C-nemo-guardrails/run.ps1       # -AvecPanne to show fail-closed
-./demos/D-agent-ops/run.ps1             # -Equipe equipe-ops by default; -SansApprobation: terminal only
+./demos/D-agent-ops/run.ps1             # -Equipe equipe-ops by default; ticket approval in the kagent UI
 ```
 
 If a live demo stalls for more than 5 seconds: switch to its video and keep talking.
@@ -75,12 +75,12 @@ Demo B needs `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN`; demo E needs GPU quo
 
 Deployed by Terraform (`./scripts/deploy.ps1`), nothing to do by hand:
 
-- **Gateway core** — [`gateway/deploy`](../gateway/deploy): Gateway `agentgateway-proxy` (ClusterIP), backend `llm`, routes `/v1` (people, Entra ID token), `/agents/v1` (agents, team virtual keys), `/mcp` (kagent agents), `/mcp-equipes` (MCP servers published by the teams, discovered by label), policies `acces-llm`, `acces-agents`, `garde-fous-llm`, resilience and metering.
+- **Gateway core** — [`gateway/deploy`](../gateway/deploy): Gateway `agentgateway-proxy` (ClusterIP), backend `llm`, routes `/v1` (people, Entra ID token), `/agents/v1` (agents, team virtual keys), `/mcp` (kagent agents), `/mcp-equipes` (MCP servers published by the teams, discovered by label), policies `acces-llm` (models), `acces-outils` (tools), `acces-agents`, `garde-fous-llm`, per-tool allow-lists, resilience and metering.
 - **« Agent Ready » teams** (démos B and D) — platform registry, Entra ID authentication on the AKS API, `rg-<base>-equipes` and the AI team pipeline identity with bounded rights ([`terraform/modules/agent-ready`](../terraform/modules/agent-ready)), its Kubernetes role and admission policy ([`modules/platform/teams.tf`](../terraform/modules/platform/teams.tf)). Per-team stack and repository template: [`terraform/teams`](../terraform/teams). Pipelines: [`.github/workflows/agent-ready.yml`](../.github/workflows/agent-ready.yml), reusable `agent-image.yml` and `agent-deploy.yml`.
 - **LibreChat** — Entra ID sign-in; MCP servers « agents » (kagent), « recherche-web », « outils-equipes ».
 - **kagent** — default ModelConfig on the gateway (`/agents/v1`, platform key).
 
-Published by `D-agent-ops/prepare.ps1` (not Terraform): the Azure MCP Server in `outils-entreprise` with its managed identity (Reader), and the agents' route `/agents/mcp-entreprise` with its policies.
+Published by `D-agent-ops/prepare.ps1` (not Terraform): the Azure MCP Server in `outils-entreprise` with its managed identity (Reader), the agents' route `/agents/mcp-entreprise` with its policies, and the GitHub token issuer in `jetons-github` (the only place the GitHub App key lives).
 
 ## Notes and honest limits
 

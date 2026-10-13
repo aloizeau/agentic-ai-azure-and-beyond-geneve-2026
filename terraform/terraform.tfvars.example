@@ -20,6 +20,10 @@ enable_enterprise_tools = false
 # user. Per-user labels are fine for a demo; for thousands of users set false.
 usage_metrics_per_user = true
 
+# Who may sign in (gateway API, LibreChat, portal): users or groups, object IDs.
+# The identity running Terraform is always allowed; nobody else by default.
+# authorized_principal_object_ids = ["<group object ID>"]
+
 # Public exposure (optional): LibreChat, Grafana, kagent UI and the LLM API on
 # https://demos.<zone> and https://*.demos.<zone>, Let's Encrypt certificates,
 # Entra ID sign-in in front of Grafana and kagent. Needs CLOUDFLARE_API_TOKEN
@@ -28,5 +32,5 @@ usage_metrics_per_user = true
 #   zone       = "shift-cloud.io"
 #   subdomain  = "demos"
 #   acme_email = "you@example.com"   # optional, Let's Encrypt contact
-#   expose_api = true                # api.demos.<zone>: /v1 and /agents/v1
+#   expose_api = true                # api.demos.<zone>: /v1 and /agents/v1 (default false)
 # }

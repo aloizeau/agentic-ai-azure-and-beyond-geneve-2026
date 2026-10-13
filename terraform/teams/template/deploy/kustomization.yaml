@@ -8,5 +8,8 @@ resources:
   - remotemcpserver.yaml
 images:
   - name: docs-mcp
-    newName: __ACR__/__EQUIPE__/docs-mcp   # tag posé par le workflow (SHA du commit)
+    newName: __ACR__/__EQUIPE__/docs-mcp
+    # « latest » n'est qu'une valeur par défaut du gabarit : le workflow de
+    # l'équipe la remplace par le SHA du commit (kustomize edit set image)
+    # avant d'appliquer. Ne jamais déployer ce fichier tel quel.
     newTag: latest

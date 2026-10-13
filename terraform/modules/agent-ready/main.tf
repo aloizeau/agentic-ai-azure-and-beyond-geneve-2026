@@ -35,6 +35,10 @@ locals {
     local.role_ids.aks_cluster_user,              # team pipeline → kubeconfig (Entra ID)
   ])
 
+  # Never to itself: the AI team identity cannot give its own pipeline the
+  # data roles it hands out (every team's documents, the registry).
+  ai_team_oid = try(azurerm_user_assigned_identity.ai_team[0].principal_id, "00000000-0000-0000-0000-000000000000")
+
   delegation_condition = <<-EOT
     (
      (
@@ -45,6 +49,8 @@ locals {
       @Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${local.delegable}}
       AND
       @Request[Microsoft.Authorization/roleAssignments:PrincipalType] ForAnyOfAnyValues:StringEqualsIgnoreCase {'ServicePrincipal'}
+      AND
+      @Request[Microsoft.Authorization/roleAssignments:PrincipalId] ForAnyOfAllValues:GuidNotEquals {${local.ai_team_oid}}
      )
     )
     AND
@@ -111,4 +117,59 @@ resource "azurerm_role_assignment" "ai_team_delegation" {
   principal_type     = "ServicePrincipal"
   condition_version  = "2.0"
   condition          = local.delegation_condition
+}
+
+# -----------------------------------------------------------------------------
+# Contributor on rg-<base>-equipes lets the AI team pipeline create identities
+# and their federated credentials — that is its job. This policy keeps those
+# federations to the two subjects Agent Ready creates: a ServiceAccount of this
+# cluster, or an agent-<team> repository of the owner running one of the
+# platform's reusable workflows. A federation to any other repository or
+# workflow (a persistent, approval-free way in) is refused by Azure Resource
+# Manager. (`like` takes one wildcard: the workflow part is a `contains`.)
+# VÉRIFIER (D-7): the federatedIdentityCredentials aliases, with
+# `az provider show --namespace Microsoft.ManagedIdentity --expand "resourceTypes/aliases"`.
+# -----------------------------------------------------------------------------
+locals {
+  github_owner = local.pipeline_on ? split("/", var.ai_team_github_repository)[0] : ""
+  fic_alias    = "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials"
+}
+
+resource "azurerm_policy_definition" "fic_equipes" {
+  count        = local.pipeline_on ? 1 : 0
+  name         = "fic-equipes-${var.base}"
+  policy_type  = "Custom"
+  mode         = "All"
+  display_name = "Agent Ready : fédérations d'identité limitées au cluster et aux dépôts agent-<équipe>"
+
+  policy_rule = jsonencode({
+    if = {
+      allOf = [
+        { field = "type", equals = local.fic_alias },
+        {
+          not = {
+            anyOf = [
+              { field = "${local.fic_alias}/issuer", equals = var.aks_oidc_issuer_url },
+              {
+                allOf = [
+                  { field = "${local.fic_alias}/issuer", equals = "https://token.actions.githubusercontent.com" },
+                  { field = "${local.fic_alias}/subject", like = "repo:${local.github_owner}/agent-*" },
+                  { field = "${local.fic_alias}/subject", contains = ":ref:refs/heads/main:job_workflow_ref:${coalesce(var.ai_team_github_repository, "-")}/.github/workflows/agent-" },
+                ]
+              },
+            ]
+          }
+        },
+      ]
+    }
+    then = { effect = "deny" }
+  })
+}
+
+resource "azurerm_resource_group_policy_assignment" "fic_equipes" {
+  count                = local.pipeline_on ? 1 : 0
+  name                 = "fic-equipes"
+  resource_group_id    = azurerm_resource_group.equipes.id
+  policy_definition_id = azurerm_policy_definition.fic_equipes[0].id
+  description          = "Fédérations d'identité de rg-${var.base}-equipes : cluster AKS, ou agent-<équipe>@main dans un workflow réutilisable de la plateforme."
 }

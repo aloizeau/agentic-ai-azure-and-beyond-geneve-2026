@@ -40,8 +40,13 @@ class Settings:
     )
     # Header the gateway sets (CEL literal) to pick a profile per route/team.
     profile_header: str = field(default_factory=lambda: _env("PROFILE_HEADER", "x-guardrail-profile"))
+    # Taille maximale d'un corps de requête (octets), refusée en 413 avant tout
+    # parsing JSON : un corps géant ne doit pas épuiser la mémoire du pod.
+    max_body_bytes: int = field(default_factory=lambda: int(_env("MAX_BODY_BYTES", str(1024 * 1024))))
 
     def validate(self) -> "Settings":
+        if self.max_body_bytes <= 0:
+            raise ValueError(f"MAX_BODY_BYTES must be > 0, got {self.max_body_bytes}")
         if self.backend not in {"library", "microservice"}:
             raise ValueError(f"BACKEND must be 'library' or 'microservice', got {self.backend!r}")
         if self.fail_mode not in {"closed", "open"}:

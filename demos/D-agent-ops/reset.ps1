@@ -6,8 +6,8 @@
   Par défaut : supprime l'équipe (Agent Ready, action destroy — via la démo B) ; son
   dépôt part avec ses issues. -Plateforme : retire aussi ce que prepare.ps1 a publié
   (Azure MCP Server, route /agents/mcp-entreprise, ses politiques, l'identité managée
-  et ses rôles). Le namespace outils-entreprise est conservé (partagé avec
-  tools/enterprise).
+  et ses rôles, l'émetteur de jetons GitHub et la clé de l'application). Le namespace
+  outils-entreprise est conservé (partagé avec tools/enterprise).
 
 .EXAMPLE
   ./demos/D-agent-ops/reset.ps1
@@ -36,12 +36,14 @@ $objects = @(
   @("agentgateway-system", "httproute/mcp-entreprise-agents"),
   @("agentgateway-system", "agentgatewaypolicy/acces-agents-outils"),
   @("agentgateway-system", "agentgatewaypolicy/outils-entreprise-autorises"),
-  @("agentgateway-system", "agentgatewaypolicy/outils-equipes-lecture"),
   @("agentgateway-system", "agentgatewaybackend/mcp-entreprise-agents")
 )
 foreach ($o in $objects) {
   Invoke-Native { kubectl -n $o[0] delete $o[1] --ignore-not-found --wait=false } "kubectl delete $($o[1])"
 }
+# L'émetteur de jetons et la clé de l'application GitHub (namespace jetons-github).
+Invoke-Native { kubectl delete namespace jetons-github --ignore-not-found --wait=false } "kubectl delete namespace jetons-github"
+Invoke-Native { kubectl delete clusterrolebinding,clusterrole emetteur-jetons-github --ignore-not-found } "RBAC de l'émetteur"
 Ok "objets Kubernetes supprimés"
 
 $rg = Get-TfOutput "resource_group_name"

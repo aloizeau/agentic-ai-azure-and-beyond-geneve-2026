@@ -18,13 +18,26 @@ variable "description" {
   default     = "Agent de l'équipe"
 }
 
-variable "platform_state" {
-  description = "Where the platform's Terraform state lives (backend.hcl written by scripts/deploy.ps1)."
+variable "plateforme" {
+  description = <<-EOT
+    The platform's non-secret outputs: `terraform output -json plateforme_pour_equipes`
+    in terraform/. The pipeline passes the GitHub variable PLATEFORME
+    (TF_VAR_plateforme), set by demos/B-agent-equipe/prepare.ps1.
+  EOT
   type = object({
-    resource_group_name  = string
-    storage_account_name = string
-    container_name       = optional(string, "tfstate")
-    key                  = optional(string, "agentic-platform.tfstate")
+    subscription_id           = string
+    tenant_id                 = string
+    location                  = string
+    resource_group_name       = string
+    teams_resource_group_name = string
+    acr_id                    = string
+    acr_name                  = string
+    acr_login_server          = string
+    aks_cluster_id            = string
+    aks_cluster_name          = string
+    aks_oidc_issuer_url       = string
+    aks_api_server            = string
+    aks_ca_certificate        = string
   })
 }
 
@@ -39,7 +52,7 @@ variable "platform_repository" {
 }
 
 variable "platform_ref" {
-  description = "Git ref of the reusable workflows the team pipelines call."
+  description = "Branch of the reusable workflows the team pipelines call (also part of the federated subject)."
   type        = string
   default     = "main"
 }
@@ -48,25 +61,4 @@ variable "kubeconfig_path" {
   description = "Run by hand with the admin kubeconfig (az aks get-credentials --admin). null: Entra ID through kubelogin (the pipeline)."
   type        = string
   default     = null
-}
-
-# Démo D — tickets GitHub. Set both (TF_VAR_github_app_id, TF_VAR_github_app_private_key,
-# from the « ai-team » environment) to give the team's MCP server the platform GitHub
-# App (Secret github-app). null: no Secret, the team's server runs without tickets.
-variable "github_app_id" {
-  description = "ID of the platform GitHub App (Issues: read and write, Metadata: read), installed on the owner's repositories."
-  type        = string
-  default     = null
-}
-
-variable "github_app_private_key" {
-  description = "PEM private key of that GitHub App."
-  type        = string
-  default     = null
-  sensitive   = true
-
-  validation {
-    condition     = (var.github_app_private_key == null ? "" : var.github_app_private_key) == "" || can(regex("BEGIN (RSA )?PRIVATE KEY", var.github_app_private_key))
-    error_message = "PEM private key expected (-----BEGIN RSA PRIVATE KEY-----)."
-  }
 }

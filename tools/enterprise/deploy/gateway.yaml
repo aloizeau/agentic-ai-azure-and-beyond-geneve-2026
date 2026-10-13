@@ -1,7 +1,8 @@
 # Backends et routes MCP pour les outils d'entreprise auto-hébergés.
 # Un backend + une route par outil : entrée LibreChat distincte, isolation des
-# pannes, label server=<outil> dans le dashboard. Auth : la policy acces-llm
-# (gateway/deploy/policies.yaml) couvre ces routes (jeton Entra ID).
+# pannes, label server=<outil> dans le dashboard. Auth : la policy acces-outils
+# (gateway/deploy/policies.yaml) couvre ces routes (jeton Entra ID, plafond en
+# requêtes). Quels outils : listes blanches en fin de fichier.
 # ---------------------------------------------------------------------------
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
@@ -83,3 +84,48 @@ spec:
     - matches: [{ path: { type: PathPrefix, value: /mcp-graph } }]
       backendRefs: [{ group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-graph }]
       timeouts: { request: 60s }
+---
+# Azure : lecture seule côté serveur (--read-only, 4 domaines) ET liste blanche
+# côté passerelle — si un flag saute à une mise à jour, la passerelle tient.
+# Mode namespace : un outil par domaine (aks, group, monitor, resourcehealth) ;
+# les formes <domaine>_* / azmcp_<domaine>_* couvrent le mode « all ».
+# VÉRIFIER (D-7) : noms réels avec tools/list sur la version épinglée.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: outils-azure-autorises
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - { group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-azure }
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            - 'mcp.tool.name in ["aks", "group", "monitor", "resourcehealth"]'
+            - 'mcp.tool.name.startsWith("aks_") || mcp.tool.name.startsWith("group_") || mcp.tool.name.startsWith("monitor_") || mcp.tool.name.startsWith("resourcehealth_")'
+            - 'mcp.tool.name.startsWith("azmcp_aks_") || mcp.tool.name.startsWith("azmcp_group_") || mcp.tool.name.startsWith("azmcp_monitor_") || mcp.tool.name.startsWith("azmcp_resourcehealth_")'
+---
+# Graph / M365 : identifiants app-only = chaque personne voit ce que l'APP voit
+# (voir l'avertissement sur le Deployment mcp-graph). Cette liste ne garde que
+# les verbes de lecture ; elle ne corrige PAS le périmètre de l'app.
+# Recommandation : laisser l'option désactivée dans le dépôt public.
+# VÉRIFIER (D-7) : noms réels (list-*, get-*, search-*) avec tools/list.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: outils-graph-autorises
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+    - { group: agentgateway.dev, kind: AgentgatewayBackend, name: mcp-graph }
+  backend:
+    mcp:
+      authorization:
+        action: Allow
+        policy:
+          matchExpressions:
+            # get-download-url exclu : URL pré-authentifiée, partageable hors passerelle.
+            - '(mcp.tool.name.startsWith("list-") || mcp.tool.name.startsWith("get-") || mcp.tool.name.startsWith("search-")) && mcp.tool.name != "get-download-url"'

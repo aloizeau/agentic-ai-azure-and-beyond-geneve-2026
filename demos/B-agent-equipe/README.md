@@ -35,14 +35,16 @@ $env:AI_TEAM_GITHUB_TOKEN = "<fine-grained token>"; ./demos/B-agent-equipe/prepa
 
 | Identity | Federated with | Azure | Kubernetes |
 |---|---|---|---|
-| `id-<base>-ai-team` (Agent Ready) | environment `ai-team` of the platform repository (approval) | Contributor on `rg-<base>-equipes`; Role Based Access Control Administrator under an ABAC condition: four roles, service principals only | ClusterRole `agentic-team-provisioner` (namespaces, quotas, limits, Secrets, RoleBindings, `bind` on `agentic-team-deployer` only), bounded by the admission policy `agent-ready-perimetre` to team namespaces |
-| `id-<team>-pipeline` (team pipelines) | branch `main` of `agent-<team>` | Storage Blob Data Contributor on its storage, AcrPush, AKS Cluster User | `agentic-team-deployer` in its namespace (no Secrets, no RBAC) |
+| `id-<base>-ai-team` (Agent Ready) | environment `ai-team` of the platform repository (approval, `main` only) | Contributor on `rg-<base>-equipes` (an Azure Policy keeps its federations to this cluster and `agent-*` repositories); Role Based Access Control Administrator under an ABAC condition: four roles, service principals only, never itself; the team states `tfstate/teams/*` only (ABAC on the blob path) | ClusterRole `agentic-team-provisioner` (namespaces, quotas, limits, Secrets, RoleBindings, `bind` on `agentic-team-deployer` only), bounded by the admission policy `agent-ready-perimetre`: team namespaces with Pod Security `baseline`, no platform name, RoleBindings to `agentic-team-deployer` for one user that is not itself |
+| `id-<team>-pipeline` (team pipelines) | branch `main` of `agent-<team>`, inside one of the AI team's two reusable workflows (`job_workflow_ref` in the OIDC subject) | Storage Blob Data Contributor on its storage, AcrPush, AKS Cluster User | `agentic-team-deployer` in its namespace (no Secrets, no RBAC; Services ClusterIP with a selector only — admission policy `equipes-services`) |
 | `id-<team>-mcp` (team MCP server) | ServiceAccount `<team>/docs-mcp` | Storage Blob Data Reader on its storage | — |
 
 The reusable workflows (`.github/workflows/agent-image.yml`, `agent-deploy.yml`) are the
 AI team's: the platform changes the CI of every team without touching their repositories.
-With a reusable workflow, the OIDC token subject stays the caller's repository and ref,
-so the team identity's federation (`repo:<owner>/agent-<team>:ref:refs/heads/main`) applies.
+Agent Ready sets the team repository's OIDC subject to repository + ref + `job_workflow_ref`:
+the team identity's federations match only a job running on `main` *inside* the AI team's
+`agent-image.yml` or `agent-deploy.yml`. A workflow the team writes itself, even on `main`,
+gets no Azure token.
 
 ## Prerequisites and limits
 
@@ -52,13 +54,19 @@ so the team identity's federation (`repo:<owner>/agent-<team>:ref:refs/heads/mai
   workflows). Environment reviewers and environment secrets in a private repository need
   GitHub Enterprise; with Enterprise, `prepare.ps1` also opens the private repository's
   reusable workflows to the owner's repositories (Actions → Access).
+- The AI team pipeline never reads the platform state (it holds the admin kubeconfig and
+  the Entra app secrets): it gets the platform's non-secret outputs as the repository
+  variable `PLATEFORME`, set by `prepare.ps1`. **`.github/workflows/agent-ready.yml` must
+  pass it to Terraform** (step `terraform`): `TF_VAR_plateforme: ${{ vars.PLATEFORME }}`,
+  in place of the former `platform_state` variable.
 - Known limits, by design: Terraform reads back the Secrets it manages, so the AI team
   identity has `get` on Secrets cluster-wide (the admission policy covers writes and deletes,
-  not reads); its Storage Blob Data Contributor on the state account also reaches the
-  platform state; AcrPush is registry-wide (a team could push under another team's path —
+  not reads); AcrPush is registry-wide (a team could push under another team's path —
   repository-scoped ACR permissions would close it).
 - Re-running Agent Ready never overwrites the team's files (agent, documents, MCP server);
   the pipelines (workflow files) stay the AI team's and are updated.
 - Validate at the D-7 rehearsal: the Kubernetes subject of a managed identity (object ID —
   both pipelines print `kubectl auth whoami`), role propagation before the first run (the
-  pipelines retry), the GitHub token permissions.
+  pipelines retry), the GitHub token permissions, the OIDC subject printed by `azure/login`
+  in « 1 · Image » (it must match `github-main-image`), the team states readable and writable
+  under the ABAC condition, and the admission refusals checked by `prepare.ps1` (step 1 bis).

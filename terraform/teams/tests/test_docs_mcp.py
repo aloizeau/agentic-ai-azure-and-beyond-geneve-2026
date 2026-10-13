@@ -13,10 +13,11 @@ class FakeContainer:
         self.docs = {p.name: p.read_bytes() for p in DOCS.glob("*.md")}
 
     def list_blobs(self):
-        return [SimpleNamespace(name=n) for n in self.docs]
+        return [SimpleNamespace(name=n, size=len(b)) for n, b in self.docs.items()]
 
-    def download_blob(self, name):
-        return SimpleNamespace(readall=lambda: self.docs[name])
+    def download_blob(self, name, offset=0, length=None):
+        data = self.docs[name][offset:]
+        return SimpleNamespace(readall=lambda: data[:length] if length is not None else data)
 
 
 def load(monkeypatch):
@@ -36,3 +37,26 @@ def test_tools(monkeypatch):
     assert m.lire_document("absent.md").startswith("Document introuvable")
     hits = m.rechercher("Qui répond aux alertes de l'astreinte et en combien de temps ?")
     assert hits[0].startswith("[astreinte.md]")
+
+
+def test_size_and_count_caps(monkeypatch):
+    m = load(monkeypatch)
+    m.container.docs = {"gros.md": b"x" * (m.MAX_BLOB_BYTES + 1), "petit.md": b"# Petit"}
+    m.container.docs.update({f"doc{i:03}.md": b"ok" for i in range(m.MAX_DOCUMENTS + 10)})
+    docs = m._documents()
+    assert "gros.md" not in docs                     # trop gros : jamais téléchargé
+    assert len(docs) == m.MAX_DOCUMENTS
+
+
+def test_download_is_length_bounded(monkeypatch):
+    # Taille annoncée fausse (0) : le téléchargement reste borné par `length`.
+    m = load(monkeypatch)
+    m.container.docs = {"menteur.md": b"y" * (m.MAX_BLOB_BYTES * 2)}
+    m.container.list_blobs = lambda: [SimpleNamespace(name="menteur.md", size=0)]
+    assert len(m._documents()["menteur.md"]) == m.MAX_BLOB_BYTES
+
+
+def test_question_is_truncated(monkeypatch):
+    m = load(monkeypatch)
+    # Le mot-clé au-delà de 500 caractères n'est pas pris en compte.
+    assert m.rechercher(" " * m.MAX_QUESTION_CHARS + "astreinte") == ["Aucun passage pertinent."]

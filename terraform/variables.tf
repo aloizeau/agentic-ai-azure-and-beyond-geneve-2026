@@ -233,7 +233,7 @@ variable "public_exposure" {
       https://demos.<zone>          LibreChat (Entra ID sign-in)
       https://grafana.demos.<zone>  Grafana, behind oauth2-proxy (Entra ID)
       https://kagent.demos.<zone>   kagent UI, behind oauth2-proxy (Entra ID)
-      https://api.demos.<zone>      /v1 (Entra ID token) and /agents/v1 (team key)
+      https://api.demos.<zone>      /v1 and /agents/v1, only with expose_api = true
 
     DNS records are "DNS only" (grey cloud): Cloudflare's free Universal SSL does
     not cover second-level names such as grafana.demos.<zone>.
@@ -243,9 +243,21 @@ variable "public_exposure" {
     zone       = string
     subdomain  = optional(string, "demos")
     acme_email = optional(string)
-    expose_api = optional(bool, true)
+    expose_api = optional(bool, false) # the LLM API on the internet: opt in
   })
   default = null
+}
+
+variable "authorized_principal_object_ids" {
+  description = <<-EOT
+    Entra ID users or groups (object IDs) allowed to sign in: gateway API (models,
+    tools, the Azure CLI token of the demos), LibreChat and the portal in front of
+    Grafana and the kagent UI. The identity running Terraform is always allowed.
+    Every one of these apps requires an assignment: the rest of the tenant,
+    guests included, is refused by Entra ID.
+  EOT
+  type        = list(string)
+  default     = []
 }
 
 variable "create_entra_apps" {
@@ -379,6 +391,16 @@ variable "ai_team_github_repository" {
 # -----------------------------------------------------------------------------
 variable "aks_admin_group_object_ids" {
   description = "Entra ID groups bound to cluster-admin on the AKS API (Entra ID authentication is on). Empty: admin kubeconfig only (az aks get-credentials --admin)."
+  type        = list(string)
+  default     = []
+}
+
+variable "aks_api_authorized_ip_ranges" {
+  description = <<-EOT
+    CIDR ranges allowed to reach the AKS API server (your workstation, the CI
+    runners' egress). Empty (default) = reachable from the internet, protected
+    by authentication only. Example: ["203.0.113.10/32"].
+  EOT
   type        = list(string)
   default     = []
 }

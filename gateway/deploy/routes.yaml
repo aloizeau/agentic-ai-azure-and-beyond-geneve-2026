@@ -21,7 +21,7 @@ spec:
       timeouts:
         request: 120s
 ---
-# MCP tools for people (LibreChat): same Entra ID token as /v1 (policy acces-llm).
+# MCP tools for people (LibreChat): same Entra ID token as /v1 (policy acces-outils: same check, request ceiling).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -40,7 +40,7 @@ spec:
         request: 300s   # invoke_agent waits for the agent's whole answer
 ---
 # Recherche web (DuckDuckGo) for people (LibreChat): same Entra ID token as
-# /mcp (policy acces-llm), its own backend so it is a distinct MCP server.
+# /mcp (policy acces-outils), its own backend so it is a distinct MCP server.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -59,7 +59,7 @@ spec:
         request: 60s    # fetch_content d'une page peut être lent
 ---
 # Outils publiés par les équipes (démo B) : même jeton Entra ID que /mcp
-# (politique acces-llm), un backend découvert par label (backend-mcp.yaml).
+# (politique acces-outils), un backend découvert par label (backend-mcp.yaml).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

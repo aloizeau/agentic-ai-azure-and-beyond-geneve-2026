@@ -12,8 +12,9 @@ command -v arctl >/dev/null || { ko "arctl absent — voir demos/extras/cycle-de
 # The registry is ClusterIP only (no authentication in the open-source edition).
 registry_up() {
   if ! curl -s -o /dev/null --max-time 2 "$ARCTL_API_BASE_URL/v0/runtimes"; then
-    kubectl -n agentregistry port-forward svc/agentregistry "${REG_PORT}:12121" >/tmp/pf-registry.log 2>&1 &
-    echo $! >/tmp/pf-registry.pid
+    # pid/log dans le répertoire d'état privé de lib.sh (survit au script).
+    kubectl -n agentregistry port-forward svc/agentregistry "${REG_PORT}:12121" >"$DEMO_STATE/pf-registry.log" 2>&1 &
+    echo $! >"$DEMO_STATE/pf-registry.pid"
     for _ in $(seq 1 20); do curl -s -o /dev/null --max-time 1 "$ARCTL_API_BASE_URL/v0/runtimes" && break; sleep 0.5; done
   fi
 }
@@ -22,8 +23,8 @@ registry_up() {
 prompt_to_configmap() {
   local tag="$1"
   arctl get prompt assistant-tickets --tag "$tag" -o json \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin)["spec"]["content"], end="")' >/tmp/prompt.txt
-  kubectl -n "$NS" create configmap prompt-assistant-tickets --from-file=prompt=/tmp/prompt.txt \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["spec"]["content"], end="")' >"$DEMO_TMP/prompt.txt"
+  kubectl -n "$NS" create configmap prompt-assistant-tickets --from-file=prompt="$DEMO_TMP/prompt.txt" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   kubectl -n "$NS" annotate configmap prompt-assistant-tickets agentic.io/prompt-tag="$tag" --overwrite >/dev/null
   ok "prompt assistant-tickets@$tag → ConfigMap prompt-assistant-tickets"
@@ -54,10 +55,12 @@ pause
 step "3 · DÉPLOYER — depuis le catalogue, dans le namespace de l'équipe"
 if ! kubectl -n "$NS" get secret jira-credentials >/dev/null 2>&1; then
   : "${JIRA_URL:?export JIRA_URL, JIRA_USERNAME and JIRA_API_TOKEN (Jira Cloud) before the demo}"
+  : "${JIRA_USERNAME:?}" "${JIRA_API_TOKEN:?}"
+  # --from-env-file + substitution de processus : les valeurs ne passent jamais
+  # sur la ligne de commande de kubectl (visible dans `ps`). printf est un builtin.
   kubectl -n "$NS" create secret generic jira-credentials \
-    --from-literal=JIRA_URL="$JIRA_URL" \
-    --from-literal=JIRA_USERNAME="${JIRA_USERNAME:?}" \
-    --from-literal=JIRA_API_TOKEN="${JIRA_API_TOKEN:?}" >/dev/null
+    --from-env-file=<(printf 'JIRA_URL=%s\nJIRA_USERNAME=%s\nJIRA_API_TOKEN=%s\n' \
+                        "$JIRA_URL" "$JIRA_USERNAME" "$JIRA_API_TOKEN") >/dev/null
   ok "Secret jira-credentials créé dans $NS (hors dépôt, hors catalogue)"
 fi
 arctl apply -f "$HERE/deploiement.yaml"

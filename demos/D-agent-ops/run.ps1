@@ -6,7 +6,8 @@
 .DESCRIPTION
   Même processus que la démo B, avec une équipe d'exploitation :
   1. Équipe IA : « Agent Ready » pour l'équipe (identités, namespace, clé virtuelle,
-     dépôt) — et l'application GitHub des tickets, posée comme Secret.
+     dépôt) ; l'émetteur de la plateforme dépose dans son namespace un jeton GitHub
+     d'une heure, limité à son dépôt — jamais la clé de l'application.
   2. Passerelle : /agents/mcp-entreprise — 401 sans clé ; la clé de l'équipe voit
      azure_* et learn_* ; la clé d'une autre équipe ne voit que Learn.
   3. Équipe de dev : un commit — trois outils « tickets » dans SON serveur MCP,
@@ -22,17 +23,13 @@
 .EXAMPLE
   ./demos/D-agent-ops/run.ps1
   ./demos/D-agent-ops/run.ps1 -SansAgentReady            # équipe déjà prête (répétition)
-  ./demos/D-agent-ops/run.ps1 -SansApprobation           # tout au terminal, sans UI kagent
 #>
 [CmdletBinding()]
 param(
+  [ValidatePattern('^[a-z][a-z0-9-]{1,18}[a-z0-9]$')]   # inséré dans du YAML et du code poussés au dépôt
   [string]$Equipe = "equipe-ops",
   [string]$Description = "Agent d'exploitation : diagnostic Azure, documentation Microsoft, tickets GitHub",
-  [switch]$SansAgentReady,
-  [switch]$SansApprobation,
-  # Secours si Agent Ready ne transmet pas encore l'application GitHub (voir prepare.ps1).
-  [string]$GitHubAppId,
-  [string]$GitHubAppKeyPath
+  [switch]$SansAgentReady
 )
 
 . (Join-Path $PSScriptRoot "..\lib.ps1")
@@ -100,13 +97,15 @@ if ($SansAgentReady) {
 if (-not (Get-SecretValue $Equipe "gateway-key" "authorization")) {
   throw "gateway-key sans clé « authorization » : terraform/teams/main.tf de la démo D appliqué ?"
 }
-if (Test-Native { kubectl -n $Equipe get secret github-app }) {
-  Ok "Secret github-app posé par Agent Ready (l'équipe ne peut pas le lire, son pod le monte)"
-} elseif ($GitHubAppId -and $GitHubAppKeyPath) {
-  Invoke-Native { kubectl -n $Equipe create secret generic github-app "--from-literal=app-id=$GitHubAppId" "--from-file=private-key=$GitHubAppKeyPath" } "secret github-app"
-  Ko "Secret github-app posé depuis ce poste (secours) — en production, c'est Agent Ready qui le pose"
+# Le jeton GitHub de l'équipe : l'émetteur de la plateforme passe toutes les 30 min ;
+# pour la démo, un passage tout de suite.
+$job = "emetteur-$Equipe-" + (Get-Date -Format "HHmmss")
+Invoke-Native { kubectl -n jetons-github create job --from=cronjob/emetteur-jetons-github $job | Out-Null } "passage de l'émetteur (prepare.ps1 fait ?)"
+[void](Test-Native { kubectl -n jetons-github wait --for=condition=complete "job/$job" --timeout=120s })
+if (Get-SecretValue $Equipe "github-token" "token") {
+  Ok "jeton GitHub dans $Equipe/github-token : 1 h, $teamRepo seul, issues:write — la clé de l'application reste dans jetons-github"
 } else {
-  throw "Secret github-app absent : prepare.ps1 -GitHubAppId … -GitHubAppKeyPath …, ou les mêmes paramètres ici"
+  throw "jeton GitHub absent dans $Equipe/github-token : kubectl -n jetons-github logs job/$job (application installée sur $teamRepo ?)"
 }
 Wait-Demo
 
@@ -133,9 +132,6 @@ $files = @("mcp\server.py", "mcp\tickets.py", "mcp\requirements.txt", "mcp\Docke
 foreach ($f in $files) {
   $text = [IO.File]::ReadAllText((Join-Path $kit $f))
   $text = $text.Replace("__EQUIPE__", $Equipe).Replace("__GITHUB_REPO__", $teamRepo)
-  if ($SansApprobation -and $f -eq "deploy\assistant-ops.yaml") {
-    $text = (($text -split "`n") | Where-Object { $_ -notmatch "requireApproval" }) -join "`n"
-  }
   $dest = Join-Path $work $f
   New-Item -ItemType Directory -Force (Split-Path $dest) | Out-Null
   [IO.File]::WriteAllText($dest, $text, [Text.UTF8Encoding]::new($false))
@@ -176,14 +172,12 @@ Step "5 · Le ticket : l'agent propose, un humain approuve"
 $create = "Diagnostique le cluster AKS $aks (groupe $aksRg) comme le prévoit notre runbook, puis crée le ticket correspondant " +
   "avec l'identifiant complet de la ressource et les URL Microsoft Learn de la remédiation."
 $before = @(Get-AgentIssues).Count
-if ($SansApprobation) {
-  [void](Ask-Agent $create)
-} else {
-  Info "UI kagent → http://localhost:8081 → $Equipe/assistant-ops →"
-  Show-Code "  $create"
-  Info "L'agent s'arrête sur creer_ticket : relire les arguments, puis Approve."
-  [void](Read-Host "  (Entrée une fois approuvé)")
-}
+# Toujours par l'UI : creer_ticket et commenter_ticket attendent une approbation
+# humaine (requireApproval) — il n'existe volontairement pas de mode sans.
+Info "UI kagent → http://localhost:8081 → $Equipe/assistant-ops →"
+Show-Code "  $create"
+Info "L'agent s'arrête sur creer_ticket : relire les arguments, puis Approve."
+[void](Read-Host "  (Entrée une fois approuvé)")
 $issues = @(Get-AgentIssues)
 for ($i = 0; $i -lt 20 -and $issues.Count -le $before; $i++) { Start-Sleep -Seconds 3; $issues = @(Get-AgentIssues) }
 if ($issues.Count -gt $before) {
@@ -194,12 +188,8 @@ Wait-Demo
 
 # -----------------------------------------------------------------------------
 Step "6 · Les règles de l'équipe tiennent : même demande, pas de doublon"
-if ($SansApprobation) {
-  [void](Ask-Agent $create)
-} else {
-  Info "Rejouer la même demande dans l'UI kagent (l'agent liste d'abord les tickets ouverts)."
-  [void](Read-Host "  (Entrée pour compter les tickets)")
-}
+Info "Rejouer la même demande dans l'UI kagent (l'agent liste d'abord les tickets ouverts)."
+[void](Read-Host "  (Entrée pour compter les tickets)")
 $after = @(Get-AgentIssues).Count
 if ($after -eq $issues.Count) { Ok "toujours $after ticket(s) ouvert(s) : l'existant est renvoyé ou commenté" } else { Ko "$after tickets ouverts (attendu $($issues.Count))" }
 Info "Depuis LibreChat (/mcp-equipes), creer_ticket et commenter_ticket n'existent pas : écrire reste un geste approuvé de l'agent."
