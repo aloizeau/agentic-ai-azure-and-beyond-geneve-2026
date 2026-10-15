@@ -236,14 +236,16 @@ locals {
     "outils-entreprise", "models", "cert-manager", "jetons-github",
   "gatekeeper-system", "app-routing-system", "aks-command", "calico-system", "tigera-operator"]
 
+  # replace() : sous Windows, git (core.autocrlf) extrait les fichiers en CRLF ;
+  # sans normalisation, « \n---\n » ne coupe rien et yamldecode reçoit tout le fichier.
   admission_docs = concat(
     var.ai_team_enabled ? [
-      for d in split("\n---\n", templatefile("${path.module}/manifests/agent-ready-admission.yaml.tftpl", {
+      for d in split("\n---\n", replace(templatefile("${path.module}/manifests/agent-ready-admission.yaml.tftpl", {
         principal_id  = var.ai_team_principal_id
         noms_reserves = jsonencode(local.noms_reserves)
-      })) : yamldecode(d)
+      }), "\r\n", "\n")) : yamldecode(d)
     ] : [],
-    [for d in split("\n---\n", file("${path.module}/manifests/equipes-admission.yaml")) : yamldecode(d)],
+    [for d in split("\n---\n", replace(file("${path.module}/manifests/equipes-admission.yaml"), "\r\n", "\n")) : yamldecode(d)],
   )
   admission = { for d in local.admission_docs : "${d.kind}/${d.metadata.name}" => d }
 }
