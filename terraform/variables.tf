@@ -424,6 +424,20 @@ variable "aks_admin_group_object_ids" {
   default     = []
 }
 
+variable "aks_admin_current_principal" {
+  description = <<-EOT
+    Grant the identity running Terraform full administration of the AKS cluster,
+    on the cluster scope: Azure Kubernetes Service RBAC Cluster Admin (Kubernetes
+    API through Entra ID: kubelogin, no --admin), Cluster Admin Role (kubeconfigs)
+    and Contributor Role (upgrades, node pools, add-ons). true: the presenter's
+    workstation (Owner). false in CI: the CI identity may only grant the roles of
+    its ABAC condition (scripts/bootstrap-state.sh), and its Contributor on the
+    subscription already covers the AKS resource and the admin kubeconfig.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "aks_api_authorized_ip_ranges" {
   description = <<-EOT
     CIDR ranges allowed to reach the AKS API server (your workstation, the CI

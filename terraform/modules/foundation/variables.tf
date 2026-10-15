@@ -25,6 +25,12 @@ variable "aks_admin_group_object_ids" {
   default     = []
 }
 
+variable "admin_principal_object_id" {
+  description = "Object ID of the identity running Terraform, granted full administration of the cluster (Kubernetes API and AKS resource). null: no assignment."
+  type        = string
+  default     = null
+}
+
 variable "api_server_authorized_ip_ranges" {
   type    = list(string)
   default = []

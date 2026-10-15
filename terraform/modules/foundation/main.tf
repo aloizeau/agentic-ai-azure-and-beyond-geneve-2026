@@ -77,14 +77,18 @@ resource "azurerm_kubernetes_cluster" "this" {
     }
   }
 
-  # Microsoft Entra ID authentication + Kubernetes RBAC. Needed by the
-  # "Agent Ready" teams (démo B, terraform/teams): a team's deployment pipeline
-  # signs in with its own managed identity (OIDC, no secret) and gets exactly
-  # one RoleBinding in its own namespace. Enabling this on an existing cluster is in place but one-way.
-  # Presenter and Terraform keep the admin kubeconfig (--admin).
+  # Microsoft Entra ID authentication, two authorizers side by side:
+  #   - Azure RBAC (azure_rbac_enabled): Azure role assignments on the cluster,
+  #     here the identity running Terraform (azurerm_role_assignment.cluster_admin) ;
+  #   - Kubernetes RBAC, still evaluated when Azure RBAC has no opinion: the
+  #     "Agent Ready" teams (démo B, terraform/teams) sign in with their own
+  #     managed identity (OIDC, no secret) and get exactly one RoleBinding in
+  #     their own namespace.
+  # Enabling Entra ID on an existing cluster is in place but one-way.
+  # Presenter and Terraform keep the admin kubeconfig (--admin) as well.
   azure_active_directory_role_based_access_control {
     tenant_id              = var.tenant_id
-    azure_rbac_enabled     = false
+    azure_rbac_enabled     = true
     admin_group_object_ids = var.aks_admin_group_object_ids
   }
 
@@ -138,6 +142,32 @@ resource "azurerm_kubernetes_cluster" "this" {
       kubernetes_version,
     ]
   }
+}
+
+# The identity running Terraform administers the whole cluster, on both planes:
+#   - Kubernetes API (data plane): every resource, every namespace, through
+#     Entra ID (kubelogin, no --admin) — needs azure_rbac_enabled above;
+#   - AKS resource (control plane): upgrades, node pools, add-ons, and the
+#     admin and user kubeconfigs (listClusterAdminCredential, the credentials
+#     the kubernetes and helm providers use).
+# null (root variable aks_admin_current_principal = false, CI): no assignment —
+# the CI identity may only grant the roles listed in its ABAC condition.
+# Azure role assignments take up to 5 minutes to reach the Kubernetes API.
+locals {
+  cluster_admin_roles = var.admin_principal_object_id == null ? {} : {
+    kubernetes_api   = "Azure Kubernetes Service RBAC Cluster Admin"
+    admin_kubeconfig = "Azure Kubernetes Service Cluster Admin Role"
+    control_plane    = "Azure Kubernetes Service Contributor Role"
+  }
+}
+
+resource "azurerm_role_assignment" "cluster_admin" {
+  for_each = local.cluster_admin_roles
+
+  scope                = azurerm_kubernetes_cluster.this.id
+  role_definition_name = each.value
+  principal_id         = var.admin_principal_object_id
+  description          = "Identity running Terraform: administers the AKS cluster (${each.key})."
 }
 
 # Optional Spot pool. Cheaper by ~82% but evictable on 30s notice, so it is off

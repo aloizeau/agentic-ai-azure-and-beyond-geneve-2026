@@ -21,6 +21,7 @@ module "foundation" {
 
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   aks_admin_group_object_ids = var.aks_admin_group_object_ids
+  admin_principal_object_id  = var.aks_admin_current_principal ? data.azurerm_client_config.current.object_id : null
 
   api_server_authorized_ip_ranges = var.aks_api_authorized_ip_ranges
 }

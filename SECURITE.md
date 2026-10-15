@@ -16,7 +16,8 @@ et repris en fin de document.
 | Domaine | Mesure |
 |---|---|
 | Accès des personnes | Affectation Entra ID obligatoire sur l'API de la passerelle, LibreChat et le portail (`authorized_principal_object_ids`) ; Grafana en Viewer par défaut |
-| API AKS | Plages IP autorisées en option (`aks_api_authorized_ip_ranges`) |
+| API AKS | Plages IP autorisées en option (`aks_api_authorized_ip_ranges`) ; Entra ID avec Azure RBAC et Kubernetes RBAC côte à côte |
+| Administration AKS | L'identité qui exécute Terraform depuis le poste (`aks_admin_current_principal`) : Azure Kubernetes Service RBAC Cluster Admin, Cluster Admin Role et Contributor Role sur le cluster seulement ; jamais en CI |
 | Identités CI | PR : identité sans aucun droit sur l'état Terraform (`fmt` + `validate` sans backend). Apply : environnement protégé, branche main, rôles délégables sans Owner, ni RBAC Administrator, ni Contributor |
 | Équipe IA (Agent Ready) | Lecture de l'état plateforme impossible (sorties non sensibles passées en variable `PLATEFORME`) ; états `teams/` seulement, rôle personnalisé sans action de gestion, sur le conteneur `tfstate` ; Secrets limités par nom ; admission sur namespaces, RoleBindings et Services |
 | Namespaces d'équipe | PSA baseline (restricted en avertissement) ; NetworkPolicies posées par Terraform, non modifiables par l'équipe ; IMDS et wireserver refusés en défense en profondeur (Cilium) ; contrôleur kagent `:8083` joignable par les pods agents seulement |
@@ -80,6 +81,8 @@ et repris en fin de document.
   `terraform fmt -check -recursive` et `terraform init -backend=false && terraform validate`
   sur `terraform/` et `terraform/teams`. Plus de `plan` en PR.
 - **Apply CI** : `TF_VAR_assign_current_principal=false`,
+  `TF_VAR_aks_admin_current_principal=false` (les rôles AKS ne sont pas dans la condition ABAC
+  de l'identité CI, son Contributor couvre déjà le kubeconfig admin),
   `TF_VAR_ai_team_manage_role_assignments=false`,
   `TF_VAR_authorized_principal_object_ids='["<oid>"]'` ; puis `prepare.ps1` (démo B) lancé une
   fois par un Owner. Sur un état existant, d'abord `terraform state rm` des deux attributions
@@ -112,3 +115,4 @@ et repris en fin de document.
 7. Azure MCP (démo D et outils d'entreprise) : démarrage avec `--transport http`, noms d'outils en `--mode all`, liste de lecture complète (certains outils `monitor_*` de lecture sont exclus par la règle actuelle).
 8. Garde-fous : statuts réels du microservice NVIDIA (`skipped` ?) ; garde native `CreditCard` d'agentgateway (Luhn, faux positifs sur la démo D) ; self check strict sous 3 s.
 9. Épingler toutes les images par digest.
+10. Azure RBAC pour Kubernetes : passage de `azure_rbac_enabled` à `true` en place sur le cluster existant (pas de recréation dans le plan) ; `kubectl auth whoami` puis `kubectl auth can-i '*' '*' -A` avec `kubelogin` (sans `--admin`) pour l'identité Terraform, après la propagation (jusqu'à 5 min) ; les pipelines d'équipe de la démo B toujours autorisés par leurs RoleBindings.

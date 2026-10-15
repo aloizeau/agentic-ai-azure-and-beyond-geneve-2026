@@ -28,6 +28,11 @@ usage_metrics_per_user = true
 # and authorized_principal_object_ids must hold the presenter or a group.
 # assign_current_principal = true
 
+# The identity running Terraform administers the whole AKS cluster (Kubernetes API
+# through Entra ID, kubeconfigs, upgrades and node pools). false in CI
+# (TF_VAR_aks_admin_current_principal=false).
+# aks_admin_current_principal = true
+
 # « Agent Ready » (démo B): owner/repo of this repository, for the AI team's
 # pipeline identity. Its two Azure roles (Contributor on rg-<base>-equipes, RBAC
 # Administrator under condition) are assigned by Terraform when run with Owner
