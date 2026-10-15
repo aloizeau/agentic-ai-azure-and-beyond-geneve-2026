@@ -1,0 +1,9 @@
+# Fins de ligne LF pour tout le dépôt, quel que soit le poste (core.autocrlf sous
+# Windows) : Terraform découpe les manifestes sur « \n---\n », bash et les
+# Dockerfile cassent en CRLF. PowerShell lit indifféremment LF et CRLF.
+* text=auto eol=lf
+
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.svg  text eol=lf
