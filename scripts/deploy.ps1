@@ -19,6 +19,7 @@
   ./scripts/deploy.ps1 -WithSelfHostedModel      # KAITO + GPU (~4,16 $/h), quota GPU requis
   ./scripts/deploy.ps1 -PublicZone shift-cloud.io # exposition publique sur demos.shift-cloud.io
                                                    # (jeton Cloudflare demandé s'il n'est pas dans CLOUDFLARE_API_TOKEN)
+  ./scripts/deploy.ps1 -SkipQuotaCheck            # ne vérifie ni le catalogue ni les quotas Foundry
 #>
 [CmdletBinding()]
 param(
@@ -28,6 +29,8 @@ param(
   [switch]$WithSelfHostedModel,
   [switch]$Phase1Only,
   [switch]$AutoApprove,
+  # Saute la vérification du catalogue et des quotas Foundry (modèles déjà déployés).
+  [switch]$SkipQuotaCheck,
   # Exposition publique : zone Cloudflare (ex. shift-cloud.io) et sous-domaine.
   [string]$PublicZone,
   [string]$PublicSubdomain = "demos",
@@ -105,38 +108,79 @@ foreach ($ns in $providers) {
 
 # -----------------------------------------------------------------------------
 Step "Modèles Microsoft Foundry en $Location"
-$catalog = az cognitiveservices model list -l $Location -o json | ConvertFrom-Json
-$usage = az cognitiveservices usage list -l $Location -o json | ConvertFrom-Json
-$wanted = @(
-  @{ Name = "gpt-5.6-sol"; Sku = "GlobalStandard"; Quota = "OpenAI.GlobalStandard.gpt-5.6-sol"; Capacity = 50 },
-  @{ Name = "gpt-5.6-terra"; Sku = "DataZoneStandard"; Quota = "OpenAI.DataZoneStandard.gpt-5.6-terra"; Capacity = 50 },
-  @{ Name = "gpt-5.6-luna"; Sku = "DataZoneStandard"; Quota = "OpenAI.DataZoneStandard.gpt-5.6-luna"; Capacity = 50 },
-  @{ Name = "model-router"; Sku = "DataZoneStandard"; Quota = "OpenAI.DataZoneStandard.ModelRouter"; Capacity = 50 },
-  @{ Name = "MAI-Image-2.6"; Sku = "GlobalStandard"; Quota = "AIServices.GlobalStandard.MAI-Image-2.6"; Capacity = 1 }
-)
-$missing = 0
-$insufficient = 0
-foreach ($w in $wanted) {
-  $hit = $catalog | Where-Object { $_.model.name -eq $w.Name -and ($_.model.skus.name -contains $w.Sku) }
-  if ($hit) { Ok ("{0} · {1}" -f $w.Name, $w.Sku) }
-  else { Warn ("{0} · {1} absent du catalogue de la région" -f $w.Name, $w.Sku); $missing++ }
+if ($SkipQuotaCheck) {
+  Warn "vérification sautée (-SkipQuotaCheck) : un modèle absent ou un quota insuffisant fera échouer terraform apply"
+}
+else {
+  $catalog = az cognitiveservices model list -l $Location -o json | ConvertFrom-Json
+  $usage = az cognitiveservices usage list -l $Location -o json | ConvertFrom-Json
+  $wanted = @(
+    @{ Name = "gpt-5.6-sol"; Sku = "GlobalStandard"; Quota = "OpenAI.GlobalStandard.gpt-5.6-sol"; Capacity = 50 },
+    @{ Name = "gpt-5.6-terra"; Sku = "DataZoneStandard"; Quota = "OpenAI.DataZoneStandard.gpt-5.6-terra"; Capacity = 50 },
+    @{ Name = "gpt-5.6-luna"; Sku = "DataZoneStandard"; Quota = "OpenAI.DataZoneStandard.gpt-5.6-luna"; Capacity = 50 },
+    @{ Name = "model-router"; Sku = "DataZoneStandard"; Quota = "OpenAI.DataZoneStandard.ModelRouter"; Capacity = 50 },
+    @{ Name = "MAI-Image-2.6"; Sku = "GlobalStandard"; Quota = "AIServices.GlobalStandard.MAI-Image-2.6"; Capacity = 1 }
+  )
+  $missing = 0
+  $insufficient = 0
 
-  $quota = $usage | Where-Object { $_.name.value -eq $w.Quota } | Select-Object -First 1
-  $available = if ($quota) { [decimal]$quota.limit - [decimal]$quota.currentValue } else { 0 }
-  if ($available -ge $w.Capacity) {
-    Ok ("quota {0} · {1}K TPM libres" -f $w.Name, $available)
+  # Relance : les déploiements déjà créés par cette solution consomment déjà leur
+  # quota, et terraform apply les conserve. Leur capacité compte donc comme
+  # disponible. Compte Foundry fdy-<préfixe><suffixe>, préfixe lu dans
+  # terraform.tfvars s'il existe (c'est lui que Terraform utilisera).
+  $tfvarsFile = Join-Path $TfDir "terraform.tfvars"
+  $quotaPrefix = $Prefix
+  if (Test-Path $tfvarsFile) {
+    $m = Select-String -Path $tfvarsFile -Pattern '^\s*name_prefix\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if ($m) { $quotaPrefix = $m.Matches[0].Groups[1].Value }
   }
-  else {
-    Warn ("quota {0} · {1}K TPM libres, {2}K requis" -f $w.Name, $available, $w.Capacity)
-    $insufficient++
+  $region = $Location.ToLower().Replace(" ", "")
+  $existing = @()
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $accounts = @(az cognitiveservices account list -o json 2>$null | ConvertFrom-Json |
+      Where-Object { $_.name -like "fdy-$quotaPrefix*" -and $_.location -eq $region })
+    foreach ($a in $accounts) {
+      $deps = az cognitiveservices account deployment list -g $a.resourceGroup -n $a.name -o json 2>$null | ConvertFrom-Json
+      $n = 0
+      if ($deps) { $existing += @($deps); $n = @($deps).Count }
+      Ok ("compte {0} existant · {1} déploiement(s), capacité comptée comme disponible" -f $a.name, $n)
+    }
   }
-}
-if ($missing -gt 0) {
-  Warn "Un modèle manque : le déploiement Foundry correspondant échouera. Ajustez model_deployments dans terraform.tfvars."
-  Confirm-Step "Continuer quand même ?"
-}
-if ($insufficient -gt 0) {
-  throw "$insufficient quota(s) Foundry insuffisant(s). Ajustez model_deployments ou demandez une augmentation avant terraform apply."
+  catch { Warn "déploiements existants illisibles : $($_.Exception.Message)" }
+  finally { $ErrorActionPreference = $previous }
+
+  foreach ($w in $wanted) {
+    $hit = $catalog | Where-Object { $_.model.name -eq $w.Name -and ($_.model.skus.name -contains $w.Sku) }
+    if ($hit) { Ok ("{0} · {1}" -f $w.Name, $w.Sku) }
+    else { Warn ("{0} · {1} absent du catalogue de la région" -f $w.Name, $w.Sku); $missing++ }
+
+    $quota = $usage | Where-Object { $_.name.value -eq $w.Quota } | Select-Object -First 1
+    $available = if ($quota) { [decimal]$quota.limit - [decimal]$quota.currentValue } else { 0 }
+    $deployed = [decimal]0
+    foreach ($d in $existing) {
+      if ($d.properties.model.name -eq $w.Name -and $d.sku.name -eq $w.Sku) { $deployed += [decimal]$d.sku.capacity }
+    }
+    if ($deployed -gt 0) {
+      Ok ("quota {0} · {1}K déjà déployés par la solution, {2}K libres" -f $w.Name, $deployed, $available)
+    }
+    elseif ($available -ge $w.Capacity) {
+      Ok ("quota {0} · {1}K TPM libres" -f $w.Name, $available)
+    }
+    else {
+      Warn ("quota {0} · {1}K TPM libres, {2}K requis" -f $w.Name, $available, $w.Capacity)
+      $insufficient++
+    }
+  }
+  if ($missing -gt 0) {
+    Warn "Un modèle manque : le déploiement Foundry correspondant échouera. Ajustez model_deployments dans terraform.tfvars."
+    Confirm-Step "Continuer quand même ?"
+  }
+  if ($insufficient -gt 0) {
+    Warn "$insufficient quota(s) Foundry insuffisant(s) : terraform apply échouera sur ces déploiements. Ajustez model_deployments, demandez une augmentation, ou relancez avec -SkipQuotaCheck."
+    Confirm-Step "Continuer quand même ?"
+  }
 }
 
 # -----------------------------------------------------------------------------
