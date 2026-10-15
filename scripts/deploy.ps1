@@ -20,6 +20,8 @@
   ./scripts/deploy.ps1 -PublicZone shift-cloud.io # exposition publique sur demos.shift-cloud.io
                                                    # (jeton Cloudflare demandé s'il n'est pas dans CLOUDFLARE_API_TOKEN)
   ./scripts/deploy.ps1 -SkipQuotaCheck            # ne vérifie ni le catalogue ni les quotas Foundry
+  ./scripts/deploy.ps1 -HideAccount               # masque abonnement, tenant et compte, sortie Terraform comprise
+                                                   # (enregistrement ou partage d'écran)
 #>
 [CmdletBinding()]
 param(
@@ -31,6 +33,9 @@ param(
   [switch]$AutoApprove,
   # Saute la vérification du catalogue et des quotas Foundry (modèles déjà déployés).
   [switch]$SkipQuotaCheck,
+  # Masque l'ID d'abonnement, le tenant, le compte et son object ID à l'écran,
+  # dans la sortie de Terraform comme dans celle d'az et de kubectl.
+  [switch]$HideAccount,
   # Exposition publique : zone Cloudflare (ex. shift-cloud.io) et sous-domaine.
   [string]$PublicZone,
   [string]$PublicSubdomain = "demos",
@@ -46,13 +51,34 @@ function Step([string]$Message) { Write-Host "`n==> $Message" -ForegroundColor C
 function Ok([string]$Message) { Write-Host "    [ok] $Message" -ForegroundColor Green }
 function Warn([string]$Message) { Write-Host "    [!]  $Message" -ForegroundColor Yellow }
 
+# -HideAccount : valeurs remplacées partout à l'affichage (renseignées après az account show).
+$script:Masks = [ordered]@{}
+function Hide-Account([string]$Text) {
+  foreach ($k in $script:Masks.Keys) {
+    if ($k) { $Text = $Text -replace [regex]::Escape($k), $script:Masks[$k] }
+  }
+  return $Text
+}
 # Native commands do not throw on failure in Windows PowerShell: check the exit code.
 # Arguments like -out=file.ext are quoted on purpose: unquoted, PowerShell splits
 # them at the dot and Terraform receives two arguments.
 function Invoke-Native {
   param([Parameter(Mandatory)][scriptblock]$Command, [string]$What = "commande")
-  & $Command
-  if ($LASTEXITCODE -ne 0) { throw "Échec : $What (code $LASTEXITCODE)" }
+  if (-not $HideAccount) {
+    & $Command
+    if ($LASTEXITCODE -ne 0) { throw "Échec : $What (code $LASTEXITCODE)" }
+    return
+  }
+  # stderr fusionné pour être masqué aussi ; Continue, sinon Windows PowerShell 5.1
+  # transforme chaque ligne d'erreur redirigée en exception.
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $Command 2>&1 | ForEach-Object { Write-Host (Hide-Account ([string]$_)) }
+    $code = $LASTEXITCODE
+  }
+  finally { $ErrorActionPreference = $previous }
+  if ($code -ne 0) { throw "Échec : $What (code $code)" }
 }
 
 # Probe a native command without failing (Windows PowerShell 5.1 turns redirected
@@ -86,9 +112,20 @@ Step "Compte Azure"
 $account = az account show -o json | ConvertFrom-Json
 if (-not $account) { throw "Pas de session Azure : lancez az login." }
 $me = az ad signed-in-user show -o json | ConvertFrom-Json
-Write-Host ("    Abonnement : {0} ({1})" -f $account.name, $account.id)
-Write-Host ("    Tenant     : {0}" -f $account.tenantId)
-Write-Host ("    Compte     : {0}" -f $me.userPrincipalName)
+if ($HideAccount) {
+  $script:Masks[[string]$account.id] = "<abonnement>"
+  $script:Masks[[string]$account.tenantId] = "<tenant>"
+  $script:Masks[[string]$me.userPrincipalName] = "<compte>"
+  $script:Masks[[string]$me.id] = "<objet-compte>"
+  Write-Host  "    Abonnement : masqué (-HideAccount)"
+  Write-Host  "    Tenant     : masqué"
+  Write-Host  "    Compte     : masqué"
+}
+else {
+  Write-Host ("    Abonnement : {0} ({1})" -f $account.name, $account.id)
+  Write-Host ("    Tenant     : {0}" -f $account.tenantId)
+  Write-Host ("    Compte     : {0}" -f $me.userPrincipalName)
+}
 Write-Host ("    Région     : {0}" -f $Location)
 Write-Host  "    Coût       : ~0,37 $/h pour les nœuds AKS + l'inférence consommée. Pensez à ./scripts/destroy.ps1."
 Confirm-Step "Déployer dans cet abonnement ?"
@@ -252,7 +289,7 @@ if ($PublicZone -and -not $hasPublic) {
   $hasPublic = $true
   Ok "public_exposure ajouté : $PublicSubdomain.$PublicZone"
 }
-Get-Content $tfvars | ForEach-Object { Write-Host "    $_" }
+Get-Content $tfvars | ForEach-Object { Write-Host ("    " + (Hide-Account $_)) }
 
 # -----------------------------------------------------------------------------
 if ($hasPublic) {
@@ -286,7 +323,13 @@ if ($hasPublic) {
 
 # -----------------------------------------------------------------------------
 Push-Location $TfDir
+$tfColorVars = "TF_CLI_ARGS_init", "TF_CLI_ARGS_validate", "TF_CLI_ARGS_plan", "TF_CLI_ARGS_apply"
 try {
+  if ($HideAccount) {
+    # Sans couleurs : une séquence ANSI au milieu d'un ID empêcherait le masquage.
+    # Retirées en fin de script (finally) : la session PowerShell reste intacte.
+    foreach ($v in $tfColorVars) { Set-Item "Env:$v" "-no-color" }
+  }
   Step "terraform init"
   Invoke-Native { terraform init -input=false -upgrade "-backend-config=backend.hcl" } "terraform init"
 
@@ -351,6 +394,7 @@ try {
   Write-Host "    Tout détruire : ./scripts/destroy.ps1"
 }
 finally {
+  if ($HideAccount) { foreach ($v in $tfColorVars) { Remove-Item "Env:$v" -ErrorAction SilentlyContinue } }
   if ($script:OwnCloudflareToken) { Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue }
   Remove-Item -ErrorAction SilentlyContinue phase1.tfplan, phase2.tfplan
   Pop-Location
