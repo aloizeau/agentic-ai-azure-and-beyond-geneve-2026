@@ -317,6 +317,29 @@ if (-not (Select-String -Path $tfvars -Pattern '^\s*ai_team_github_repository\s*
     Warn "dépôt GitHub introuvable (remote origin) : démo B désactivée — -GitHubRepository <owner>/<dépôt> pour l'activer"
   }
 }
+# Identifiants numériques du propriétaire et du dépôt : sujets OIDC « immuables »
+# (repo:<owner>@<id>/<dépôt>@<id>:…), le format des dépôts créés après le 15 juillet 2026.
+$repoLine = Select-String -Path $tfvars -Pattern '^\s*ai_team_github_repository\s*=\s*"([^"]+)"' | Select-Object -First 1
+if ($repoLine -and -not (Select-String -Path $tfvars -Pattern '^\s*ai_team_github_ids\s*=' -Quiet)) {
+  $repo = $repoLine.Matches[0].Groups[1].Value
+  $info = $null
+  if (Get-Command gh -ErrorAction SilentlyContinue) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { $json = gh api "repos/$repo" 2>$null; if ($LASTEXITCODE -eq 0) { $info = ($json -join "`n") | ConvertFrom-Json } } finally { $ErrorActionPreference = $previous }
+  }
+  if (-not $info) {
+    # Dépôt public : l'API GitHub répond sans authentification.
+    try { $info = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo" -Headers @{ "User-Agent" = "deploy.ps1" } } catch { $info = $null }
+  }
+  if ($info -and $info.id -and $info.owner.id) {
+    Add-Content -Path $tfvars -Value "ai_team_github_ids        = { owner = $([int64]$info.owner.id), repository = $([int64]$info.id) }" -Encoding ascii
+    Ok "ai_team_github_ids ajouté : $repo (propriétaire $($info.owner.id), dépôt $($info.id))"
+  }
+  else {
+    Warn "identifiants GitHub de $repo introuvables (gh auth login ?) : sujets OIDC par noms seulement — un dépôt créé après le 15/07/2026 sera refusé par Entra ID"
+  }
+}
 Get-Content $tfvars | ForEach-Object { Write-Host ("    " + (Hide-Account $_)) }
 
 # -----------------------------------------------------------------------------

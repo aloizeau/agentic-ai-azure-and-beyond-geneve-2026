@@ -55,7 +55,8 @@ jobs:
           echo "image : $ACR_NAME.azurecr.io/$EQUIPE/docs-mcp:$tag"
 
       - name: Sujet OIDC
-        # Doit être égal à la fédération github-main-image d'id-<équipe>-pipeline.
+        # Doit être égal à une fédération d'id-<équipe>-pipeline : github-main-image
+        # (noms) ou github-main-image-ids (dépôts créés après le 15 juillet 2026).
         run: |
           jwt=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)

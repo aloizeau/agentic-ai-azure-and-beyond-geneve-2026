@@ -101,13 +101,32 @@ resource "azurerm_user_assigned_identity" "ai_team" {
 
 # Only the « ai-team » environment of the platform repository — whose
 # deployments need an approval — can obtain a token for this identity.
+# Two subject formats: name-based, and « immutable » (owner and repository
+# IDs, the default for repositories created after July 15, 2026 — the name
+# alone could be recycled by someone else).
+locals {
+  ai_team_subjects = !local.pipeline_on ? {} : merge(
+    { "github-ai-team" = "repo:${var.ai_team_github_repository}:environment:${var.ai_team_environment}" },
+    var.ai_team_github_ids == null ? {} : {
+      "github-ai-team-ids" = format("repo:%s@%d/%s@%d:environment:%s",
+        split("/", var.ai_team_github_repository)[0], var.ai_team_github_ids.owner,
+      split("/", var.ai_team_github_repository)[1], var.ai_team_github_ids.repository, var.ai_team_environment)
+    },
+  )
+}
+
 resource "azurerm_federated_identity_credential" "ai_team" {
-  count                     = local.pipeline_on ? 1 : 0
-  name                      = "github-ai-team"
+  for_each                  = local.ai_team_subjects
+  name                      = each.key
   user_assigned_identity_id = azurerm_user_assigned_identity.ai_team[0].id
   issuer                    = "https://token.actions.githubusercontent.com"
-  subject                   = "repo:${var.ai_team_github_repository}:environment:${var.ai_team_environment}"
+  subject                   = each.value
   audience                  = ["api://AzureADTokenExchange"]
+}
+
+moved {
+  from = azurerm_federated_identity_credential.ai_team[0]
+  to   = azurerm_federated_identity_credential.ai_team["github-ai-team"]
 }
 
 resource "azurerm_role_assignment" "ai_team_contributor" {
@@ -163,7 +182,15 @@ resource "azurerm_policy_definition" "fic_equipes" {
               {
                 allOf = [
                   { field = "${local.fic_alias}/issuer", equals = "https://token.actions.githubusercontent.com" },
-                  { field = "${local.fic_alias}/subject", like = "repo:${local.github_owner}/agent-*" },
+                  {
+                    anyOf = concat(
+                      [{ field = "${local.fic_alias}/subject", like = "repo:${local.github_owner}/agent-*" }],
+                      # Immutable subject: repo:<owner>@<owner_id>/agent-<équipe>@<repo_id>:…
+                      var.ai_team_github_ids == null ? [] : [
+                        { field = "${local.fic_alias}/subject", like = "repo:${local.github_owner}@${var.ai_team_github_ids.owner}/agent-*" },
+                      ],
+                    )
+                  },
                   { field = "${local.fic_alias}/subject", contains = ":ref:refs/heads/main:job_workflow_ref:${coalesce(var.ai_team_github_repository, "-")}/.github/workflows/agent-" },
                 ]
               },

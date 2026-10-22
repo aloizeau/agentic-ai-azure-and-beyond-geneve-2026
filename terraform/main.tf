@@ -39,6 +39,7 @@ module "agent_ready" {
   aks_id                    = module.foundation.cluster_id
   aks_oidc_issuer_url       = module.foundation.oidc_issuer_url
   ai_team_github_repository = var.ai_team_github_repository
+  ai_team_github_ids        = var.ai_team_github_ids
   manage_role_assignments   = var.ai_team_manage_role_assignments
 }
 

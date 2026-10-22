@@ -409,6 +409,22 @@ variable "ai_team_github_repository" {
   default     = null
 }
 
+variable "ai_team_github_ids" {
+  description = <<-EOT
+    Numeric IDs of the owner and of the repository ai_team_github_repository
+    (GitHub API: repos/<owner>/<repo> → owner.id, id). Repositories created
+    after July 15, 2026 put them in the OIDC subject
+    (repo:<owner>@<owner_id>/<repo>@<repo_id>:…, « immutable subject claims »):
+    the federations then accept both formats. null: name-based subjects only.
+    Filled in by scripts/deploy.ps1.
+  EOT
+  type = object({
+    owner      = number
+    repository = number
+  })
+  default = null
+}
+
 variable "ai_team_manage_role_assignments" {
   description = <<-EOT
     Who gives the AI team identity its Azure roles (Contributor on

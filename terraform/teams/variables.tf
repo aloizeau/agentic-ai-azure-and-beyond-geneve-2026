@@ -42,6 +42,9 @@ variable "plateforme" {
     aks_oidc_issuer_url       = string
     aks_api_server            = string
     aks_ca_certificate        = string
+    # Immutable GitHub OIDC subjects (repo:<owner>@<owner_id>/<repo>@<repo_id>:…).
+    # Absent from an older PLATEFORME variable: name-based subjects only.
+    github_owner_id = optional(number)
   })
 }
 

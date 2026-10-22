@@ -122,6 +122,8 @@ output "plateforme_pour_equipes" {
     aks_oidc_issuer_url       = module.foundation.oidc_issuer_url
     aks_api_server            = module.foundation.api_server
     aks_ca_certificate        = module.foundation.ca_certificate
+    # Immutable GitHub OIDC subjects (repo:<owner>@<owner_id>/…): terraform/teams.
+    github_owner_id = try(var.ai_team_github_ids.owner, null)
   }
 }
 

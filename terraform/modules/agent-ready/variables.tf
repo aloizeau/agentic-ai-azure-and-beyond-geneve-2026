@@ -12,6 +12,15 @@ variable "ai_team_github_repository" {
   default     = null
 }
 
+variable "ai_team_github_ids" {
+  description = "Numeric IDs { owner, repository } of ai_team_github_repository, for immutable OIDC subjects. null: name-based subjects only."
+  type = object({
+    owner      = number
+    repository = number
+  })
+  default = null
+}
+
 variable "ai_team_environment" {
   type    = string
   default = "ai-team"

@@ -90,7 +90,7 @@ gets no Azure token.
 - Validate at the D-7 rehearsal: the Kubernetes subject of a managed identity (object ID —
   both pipelines print `kubectl auth whoami`), role propagation before the first run (the
   pipelines retry), the GitHub token permissions, the OIDC subject printed by `azure/login`
-  in « 1 · Image » (it must match `github-main-image`), the team states readable and writable
+  in « 1 · Image » (it must match `github-main-image`, or `github-main-image-ids` with owner and repository IDs), the team states readable and writable
   under the ABAC condition (`terraform init` lists blobs with the prefix `teams/`; a list
 without prefix must be refused), the custom role update (`az role definition update`), the
 pod labels the team NetworkPolicies rely on (kagent controller, agent pods

@@ -55,13 +55,38 @@ locals {
   }
 }
 
+# Two subject formats per workflow: name-based, and « immutable » (owner and
+# repository IDs — the default for repositories created after July 15, 2026,
+# which agent-<équipe> always is). job_workflow_ref keeps the names.
+locals {
+  oidc_suffix = { for k, wf in local.reusable_workflows : k => ":ref:refs/heads/main:job_workflow_ref:${var.platform_repository}/.github/workflows/${wf}@refs/heads/${var.platform_ref}" }
+  pipeline_subjects = merge(
+    { for k, sfx in local.oidc_suffix : "github-main-${k}" => "repo:${var.github_owner}/${local.repository}${sfx}" },
+    local.p.github_owner_id == null ? {} : {
+      for k, sfx in local.oidc_suffix : "github-main-${k}-ids" =>
+      "repo:${var.github_owner}@${local.p.github_owner_id}/${local.repository}@${github_repository.equipe.repo_id}${sfx}"
+    },
+  )
+}
+
 resource "azurerm_federated_identity_credential" "pipeline" {
-  for_each                  = local.reusable_workflows
-  name                      = "github-main-${each.key}"
+  # Keys known at plan time: the repository ID only appears in the values.
+  for_each                  = local.pipeline_subjects
+  name                      = each.key
   user_assigned_identity_id = azurerm_user_assigned_identity.pipeline.id
   issuer                    = "https://token.actions.githubusercontent.com"
-  subject                   = "repo:${var.github_owner}/${local.repository}:ref:refs/heads/main:job_workflow_ref:${var.platform_repository}/.github/workflows/${each.value}@refs/heads/${var.platform_ref}"
+  subject                   = each.value
   audience                  = ["api://AzureADTokenExchange"]
+}
+
+moved {
+  from = azurerm_federated_identity_credential.pipeline["image"]
+  to   = azurerm_federated_identity_credential.pipeline["github-main-image"]
+}
+
+moved {
+  from = azurerm_federated_identity_credential.pipeline["deploiement"]
+  to   = azurerm_federated_identity_credential.pipeline["github-main-deploiement"]
 }
 
 # The team's MCP SERVER (pod): reads its documents, nothing else.
