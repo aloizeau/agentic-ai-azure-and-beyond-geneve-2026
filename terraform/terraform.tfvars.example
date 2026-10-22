@@ -1,9 +1,10 @@
 
 # Guardrails: Foundry content filters run in production today; NeMo Guardrails
-# behind the gateway is the R&D target. Turn it on once the adapter image is
-# built (guardrail-adapter workflow): the webhook is fail-closed.
-enable_nemo_guardrails  = false
-guardrail_adapter_image = "ghcr.io/<owner>/nemo-guardrail-adapter:0.1.0"
+# behind the gateway is the R&D target. The webhook is fail-closed: the adapter
+# image must exist. scripts/deploy.ps1 builds it in the platform registry
+# (default image); set guardrail_adapter_image only to use another registry.
+enable_nemo_guardrails = false
+# guardrail_adapter_image = "ghcr.io/<owner>/nemo-guardrail-adapter:0.1.0"
 
 # Self-hosted model on AKS (KAITO add-on): off by default, needs GPU quota
 # (StandardNVADSA10v5Family, 36 vCPU) and costs ~4.16 $/hour while running.

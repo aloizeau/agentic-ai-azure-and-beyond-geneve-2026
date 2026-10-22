@@ -325,9 +325,19 @@ variable "enable_nemo_guardrails" {
 }
 
 variable "guardrail_adapter_image" {
-  description = "Container image of the NeMo Guardrails adapter (built by the guardrail-adapter workflow)."
+  description = <<-EOT
+    Container image of the NeMo Guardrails adapter. null (default) = the
+    platform registry: <acr>/plateforme/nemo-guardrail-adapter:0.1.0, built by
+    scripts/deploy.ps1 (az acr build) between phase 1 and phase 2. Set it to use
+    another registry, e.g. the image pushed by the guardrail-adapter workflow.
+  EOT
   type        = string
-  default     = "ghcr.io/OWNER/nemo-guardrail-adapter:0.1.0"
+  default     = null
+
+  validation {
+    condition     = var.guardrail_adapter_image == null || can(regex("^[a-z0-9][a-z0-9._/:-]*$", var.guardrail_adapter_image))
+    error_message = "guardrail_adapter_image must be a lowercase image reference (registry/repository:tag)."
+  }
 }
 
 # -----------------------------------------------------------------------------

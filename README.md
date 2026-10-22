@@ -159,7 +159,7 @@ See [GitHub setup](#github-setup) below: one bootstrap script, five repository v
 | 6 | Settings → Branches | Protect `main`: pull request required, status check `terraform / lint` required. |
 | 7 | Entra ID (tenant admin, once) | If the pipeline must create the two app registrations, grant the managed identity Microsoft Graph **Application.ReadWrite.OwnedBy**. Otherwise run the first apply from your workstation, or set `create_entra_apps = false`. |
 | 8 | Settings → Secrets and variables → Actions | Public exposure only: secret `CLOUDFLARE_API_TOKEN`, variable `PUBLIC_EXPOSURE` = `{zone="shift-cloud.io",subdomain="demos"}`. |
-| 9 | Packages | The `guardrail-adapter` workflow pushes `ghcr.io/<owner>/nemo-guardrail-adapter`; set the package visibility, then put that image in `guardrail_adapter_image`. |
+| 9 | Packages | NeMo only: by default the adapter image is `<acr>/plateforme/nemo-guardrail-adapter:0.1.0` (build it with `az acr build` after phase 1, as `scripts/deploy.ps1` does). To use the image the `guardrail-adapter` workflow pushes to `ghcr.io/<owner>/nemo-guardrail-adapter` instead, set the package visibility and put that image (lowercase) in `guardrail_adapter_image`. |
 
 Authentication is OIDC federation end to end: no client secret, no storage key, nothing sensitive stored in GitHub.
 
@@ -185,7 +185,7 @@ Authentication is OIDC federation end to end: no client secret, no storage key, 
 | `usage_metrics_per_user` | `true` | `user` label on the gateway metrics (usage dashboard per person); set `false` for thousands of users — team, model, cost and tools remain |
 | `public_exposure` | `null` | `{ zone, subdomain = "demos", acme_email, expose_api = false }`: LibreChat, Grafana and the kagent UI on HTTPS under `<subdomain>.<zone>`, plus the LLM API with `expose_api = true`; `null` = nothing public, port-forward only |
 | `enable_nemo_guardrails` | `false` | NeMo Guardrails behind the gateway (R&D target; production today uses Foundry content filters). Build the adapter image first: the webhook is fail-closed |
-| `guardrail_adapter_image` | ghcr placeholder | Image built by `guardrail-adapter.yml` |
+| `guardrail_adapter_image` | `null` | `null` = `<acr>/plateforme/nemo-guardrail-adapter:0.1.0`, built by `scripts/deploy.ps1`; or any lowercase image reference (e.g. the one built by `guardrail-adapter.yml`) |
 | `enable_self_hosted_models` | `false` | KAITO add-on + Phi-4-mini on a GPU node, route `/aks/v1` |
 | `self_hosted_gpu_instance_type` | `Standard_NV36ads_A10_v5` | GPU size for KAITO (Ampere or newer) |
 

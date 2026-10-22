@@ -313,6 +313,7 @@ if ($hasPublic) {
     catch { throw "Jeton Cloudflare refusé : $($_.Exception.Message)" }
     if (@($zones.result).Count -ne 1) { throw "Zone $zoneName introuvable avec ce jeton (droit Zone:Read manquant ?)." }
     Ok "jeton Cloudflare valide, zone $zoneName accessible"
+    $script:CfZoneId = @($zones.result)[0].id
   }
   catch {
     if ($script:OwnCloudflareToken) { Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue }
@@ -337,7 +338,25 @@ try {
   Invoke-Native { terraform validate } "terraform validate"
 
   Step "Phase 1 — infrastructure (plan)"
-  Invoke-Native { terraform plan -input=false "-out=phase1.tfplan" } "terraform plan (phase 1)"
+  # Relance sur un déploiement existant : sans deploy_platform=true, le plan de
+  # la phase 1 détruirait toute la plateforme (module.platform, count = 0).
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { $platformInState = @(terraform state list 2>$null) -match '^module\.platform\[0\]\.' } finally { $ErrorActionPreference = $previous }
+  $phase1Vars = @()
+  if ($platformInState) {
+    $phase1Vars = @("-var", "deploy_platform=true")
+    Ok "plateforme déjà déployée : conservée pendant la phase 1"
+  }
+  Invoke-Native { terraform plan -input=false @phase1Vars "-out=phase1.tfplan" } "terraform plan (phase 1)"
+  # Garde-fou : -AutoApprove ne détruit jamais la plateforme sans relecture.
+  $destroys = @((terraform show -json phase1.tfplan | ConvertFrom-Json).resource_changes |
+      Where-Object { $_.address -like 'module.platform*' -and $_.change.actions -contains 'delete' })
+  if ($destroys.Count -gt 0) {
+    Warn "$($destroys.Count) ressource(s) de la plateforme seraient détruites ou remplacées par la phase 1 :"
+    $destroys | Select-Object -First 15 | ForEach-Object { Warn "  $($_.address)" }
+    if ($AutoApprove) { throw "Arrêt : -AutoApprove ne détruit pas la plateforme. Relancez sans -AutoApprove après relecture du plan." }
+  }
   Confirm-Step "Appliquer la phase 1 ?"
   Invoke-Native { terraform apply -input=false phase1.tfplan } "terraform apply (phase 1)"
 
@@ -349,7 +368,58 @@ try {
   Invoke-Native { az aks get-credentials --resource-group $aksRg --name $aksName --admin --overwrite-existing } "az aks get-credentials"
   Invoke-Native { kubectl get nodes -o wide } "kubectl get nodes"
 
+  if ($hasPublic -and $script:CfZoneId) {
+    # Enregistrements A laissés par un déploiement précédent (état Terraform
+    # perdu, autre préfixe) : le DNS répond alors plusieurs IP, Let's Encrypt
+    # tombe sur une IP morte et les certificats ne sont jamais émis. Avant la
+    # phase 2, qui demande les certificats.
+    Step "DNS Cloudflare : enregistrements en trop"
+    $ip = terraform output -raw public_ip_address
+    $sub = ((Select-String -Path $tfvars -Pattern 'subdomain\s*=\s*"([^"]+)"').Matches | Select-Object -First 1).Groups[1].Value
+    if (-not $sub) { $sub = "demos" }
+    $base = "$sub.$zoneName"
+    $cf = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
+    $records = @()
+    foreach ($n in $base, "*.$base") {
+      $records += @((Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones/$($script:CfZoneId)/dns_records?type=A&name=$([uri]::EscapeDataString($n))" -Headers $cf).result)
+    }
+    $stale = @($records | Where-Object { $_.content -ne $ip })
+    if ($stale.Count -eq 0) { Ok "$base et *.$base -> $ip uniquement" }
+    else {
+      foreach ($r in $stale) { Warn "$($r.name) -> $($r.content) (attendu : $ip) — $($r.comment)" }
+      Confirm-Step "Supprimer ces $($stale.Count) enregistrement(s) ?"
+      foreach ($r in $stale) {
+        Invoke-RestMethod -Method Delete -Uri "https://api.cloudflare.com/client/v4/zones/$($script:CfZoneId)/dns_records/$($r.id)" -Headers $cf | Out-Null
+        Ok "supprimé : $($r.name) -> $($r.content)"
+      }
+    }
+    $cf = $null
+  }
+
   if ($Phase1Only) { Step "Phase 1 terminée (-Phase1Only)."; return }
+
+  # NeMo Guardrails : le webhook est fail-closed, l'image de l'adaptateur doit
+  # exister avant la phase 2. Image par défaut (guardrail_adapter_image absent
+  # de terraform.tfvars) : registre de la plateforme, construite ici dans Azure.
+  $nemoOn = Select-String -Path $tfvars -Pattern '^\s*enable_nemo_guardrails\s*=\s*true' -Quiet
+  $customImage = Select-String -Path $tfvars -Pattern '^\s*guardrail_adapter_image\s*=' -Quiet
+  if ($nemoOn -and -not $customImage) {
+    Step "Image de l'adaptateur NeMo Guardrails"
+    $acr = terraform output -raw acr_name
+    $repo = "plateforme/nemo-guardrail-adapter"
+    $tag = "0.1.0"
+    $tags = @()
+    if (Test-Native { az acr repository show-tags --name $acr --repository $repo -o tsv }) {
+      $tags = @(az acr repository show-tags --name $acr --repository $repo -o tsv)
+    }
+    if ($tags -contains $tag) {
+      Ok "$repo`:$tag déjà présente dans $acr"
+    }
+    else {
+      Invoke-Native { az acr build --registry $acr --image "$repo`:$tag" (Join-Path $Root "guardrails\adapter") } "az acr build"
+      Ok "$repo`:$tag construite dans $acr"
+    }
+  }
 
   Step "Phase 2 — plateforme (plan)"
   Invoke-Native { terraform plan -input=false -var deploy_platform=true "-out=phase2.tfplan" } "terraform plan (phase 2)"
@@ -376,6 +446,7 @@ try {
   }
 
   Invoke-Native { terraform apply -input=false phase2.tfplan } "terraform apply (phase 2)"
+
 
   Step "État du cluster"
   kubectl get pods -A --field-selector=status.phase!=Succeeded

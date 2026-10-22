@@ -129,7 +129,7 @@ module "platform" {
   gateway_scope           = module.identity.gateway_scope
 
   enable_nemo_guardrails  = var.enable_nemo_guardrails
-  guardrail_adapter_image = var.guardrail_adapter_image
+  guardrail_adapter_image = coalesce(var.guardrail_adapter_image, "${module.foundation.acr_login_server}/plateforme/nemo-guardrail-adapter:0.1.0")
   foundry_account_name    = module.ai.foundry_account_name
   foundry_project_name    = module.ai.foundry_project_name
 
