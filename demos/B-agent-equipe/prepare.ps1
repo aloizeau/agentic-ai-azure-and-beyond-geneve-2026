@@ -23,19 +23,22 @@
        PLATEFORME : les sorties non sensibles de la plateforme, terraform output
        plateforme_pour_equipes) ;
     4. pose le secret AI_TEAM_GITHUB_TOKEN de l'environnement, depuis
-       $env:AI_TEAM_GITHUB_TOKEN ou une saisie masquée — transmis à gh par l'entrée
-       standard, jamais écrit sur disque ;
+       $env:AI_TEAM_GITHUB_TOKEN (jeton fine-grained) ou, à défaut, le jeton de votre
+       session gh (portées repo, workflow, delete_repo — demandées si besoin) —
+       transmis à gh par l'entrée standard, jamais écrit sur disque ;
     5. si ce dépôt est privé : autorise les dépôts du même propriétaire à appeler ses
        workflows réutilisables (agent-image.yml, agent-deploy.yml).
 
-  Jeton GitHub (fine-grained, propriétaire = celui des dépôts d'équipes), « All
+  Jeton de la session gh par défaut : simple, mais valable sur tous vos dépôts. Hors
+  démo, préférer un jeton GitHub (fine-grained, propriétaire = celui des dépôts d'équipes), « All
   repositories », en lecture et écriture : Administration, Contents, Workflows, Variables
   et Actions — Actions sert à fixer le sujet OIDC du dépôt de l'équipe
   (PUT /repos/<owner>/<dépôt>/actions/oidc/customization/sub) ; sans lui, Agent Ready
   échoue sur github_actions_repository_oidc_subject_claim_customization_template.
 
 .EXAMPLE
-  $env:AI_TEAM_GITHUB_TOKEN = "<jeton>"; ./demos/B-agent-equipe/prepare.ps1
+  ./demos/B-agent-equipe/prepare.ps1                                          # jeton de la session gh
+  $env:AI_TEAM_GITHUB_TOKEN = "<jeton>"; ./demos/B-agent-equipe/prepare.ps1   # jeton fine-grained
 #>
 [CmdletBinding()]
 param()
@@ -208,9 +211,22 @@ try {
 
   Step "4 · Secret AI_TEAM_GITHUB_TOKEN (environnement ai-team)"
   $token = $env:AI_TEAM_GITHUB_TOKEN
-  if (-not $token) {
-    $secure = Read-Host "Jeton GitHub de l'équipe IA (fine-grained)" -AsSecureString
-    $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+  if ($token) {
+    Ok "jeton fine-grained fourni (AI_TEAM_GITHUB_TOKEN)"
+  } else {
+    # Démo simplifiée : le jeton de la session gh. Portées requises : repo (dépôt,
+    # contenu, variables, sujet OIDC), workflow (pipelines de l'équipe),
+    # delete_repo (destroy de l'équipe, reset.ps1).
+    $headers = Get-NativeOutput { gh api -i user }
+    $line = @($headers | Where-Object { $_ -match '^x-oauth-scopes:' }) | Select-Object -First 1
+    $scopes = @(([string]$line -replace '^x-oauth-scopes:\s*', '').Trim() -split ',\s*' | Where-Object { $_ })
+    $missing = @("repo", "workflow", "delete_repo" | Where-Object { $scopes -notcontains $_ })
+    if ($missing.Count -gt 0) {
+      Info "session gh : portées manquantes ($($missing -join ', ')) — autorisation dans le navigateur"
+      Invoke-Native { gh auth refresh -h github.com -s ($missing -join ",") } "gh auth refresh"
+    }
+    $token = ([string](Get-NativeOutput { gh auth token })).Trim()
+    Info "[!] jeton de VOTRE session gh (portées repo, workflow, delete_repo sur tous vos dépôts) : plus large qu'un jeton fine-grained, à réserver à une démo. Le pipeline s'arrête si vous le révoquez (gh auth logout ne le révoque pas)."
   }
   if (-not $token) { throw "jeton vide" }
   $token | gh secret set AI_TEAM_GITHUB_TOKEN --env ai-team --repo $repo

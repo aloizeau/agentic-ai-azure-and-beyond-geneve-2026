@@ -19,7 +19,9 @@
   ./scripts/deploy.ps1 -WithSelfHostedModel      # KAITO + GPU (~4,16 $/h), quota GPU requis
   ./scripts/deploy.ps1 -PublicZone shift-cloud.io # exposition publique sur demos.shift-cloud.io
                                                    # (jeton Cloudflare demandé s'il n'est pas dans CLOUDFLARE_API_TOKEN)
+  ./scripts/deploy.ps1 -PublicZone shift-cloud.io -ExposeApi  # + api.demos.shift-cloud.io (/v1, /agents/v1)
   ./scripts/deploy.ps1 -SkipQuotaCheck            # ne vérifie ni le catalogue ni les quotas Foundry
+  ./scripts/deploy.ps1 -GitHubRepository <owner>/<dépôt>  # démo B (par défaut : remote origin ; « none » : sans)
   ./scripts/deploy.ps1 -HideAccount               # masque abonnement, tenant et compte, sortie Terraform comprise
                                                    # (enregistrement ou partage d'écran)
 #>
@@ -39,7 +41,12 @@ param(
   # Exposition publique : zone Cloudflare (ex. shift-cloud.io) et sous-domaine.
   [string]$PublicZone,
   [string]$PublicSubdomain = "demos",
-  [string]$AcmeEmail
+  [string]$AcmeEmail,
+  # api.<sous-domaine>.<zone> : /v1 et /agents/v1 sur Internet (Entra ID ou clé d'équipe).
+  [switch]$ExposeApi,
+  # Démo B (« Agent Ready ») : <owner>/<dépôt> de la plateforme sur GitHub. Par défaut,
+  # déduit du remote git « origin » ; « none » pour ne pas créer le pipeline de l'équipe IA.
+  [string]$GitHubRepository
 )
 
 $ErrorActionPreference = "Stop"
@@ -284,10 +291,31 @@ $hasPublic = Select-String -Path $tfvars -Pattern '^\s*public_exposure\s*=' -Qui
 if ($PublicZone -and -not $hasPublic) {
   $block = @("", "public_exposure = {", "  zone      = `"$PublicZone`"", "  subdomain = `"$PublicSubdomain`"")
   if ($AcmeEmail) { $block += "  acme_email = `"$AcmeEmail`"" }
+  if ($ExposeApi) { $block += "  expose_api = true" }
   $block += "}"
   Add-Content -Path $tfvars -Value $block -Encoding ascii
   $hasPublic = $true
   Ok "public_exposure ajouté : $PublicSubdomain.$PublicZone"
+}
+# Démo B : dépôt GitHub de la plateforme (identité du pipeline « Agent Ready »),
+# ajouté s'il n'y est pas encore — déduit du remote origin par défaut.
+if (-not (Select-String -Path $tfvars -Pattern '^\s*ai_team_github_repository\s*=' -Quiet)) {
+  $repo = $GitHubRepository
+  if (-not $repo) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { $origin = git -C $Root remote get-url origin 2>$null } finally { $ErrorActionPreference = $previous }
+    $m = [regex]::Match([string]$origin, 'github\.com[:/]([A-Za-z0-9-]+/[A-Za-z0-9._-]+?)(\.git)?/?$')
+    if ($m.Success) { $repo = $m.Groups[1].Value }
+  }
+  if ($repo -and $repo -ne "none") {
+    if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { throw "-GitHubRepository : <owner>/<dépôt> attendu, reçu « $repo »" }
+    Add-Content -Path $tfvars -Value "ai_team_github_repository = `"$repo`"" -Encoding ascii
+    Ok "ai_team_github_repository ajouté : $repo (démo B)"
+  }
+  elseif (-not $repo) {
+    Warn "dépôt GitHub introuvable (remote origin) : démo B désactivée — -GitHubRepository <owner>/<dépôt> pour l'activer"
+  }
 }
 Get-Content $tfvars | ForEach-Object { Write-Host ("    " + (Hide-Account $_)) }
 

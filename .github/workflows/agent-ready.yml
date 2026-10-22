@@ -62,6 +62,7 @@ jobs:
       TF_INPUT: "false"
     steps:
       - name: Nom d'équipe
+        working-directory: ${{ runner.temp }} # avant le checkout : terraform/teams n'existe pas encore
         run: |
           if ! printf '%s' "$EQUIPE" | grep -Eq '^[a-z][a-z0-9-]{1,18}[a-z0-9]$' || [[ "$EQUIPE" == *--* ]]; then
             echo "::error::nom d'équipe invalide : 3 à 20 caractères, minuscules, chiffres et tirets, pas de « -- »"
