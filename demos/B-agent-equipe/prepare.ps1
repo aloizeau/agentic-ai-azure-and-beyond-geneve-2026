@@ -82,16 +82,32 @@ try {
     NotDataActions   = @()
     AssignableScopes = @("/subscriptions/$subscription")
   }
-  $roleId = az role definition list --name $roleName --custom-role-only true --query "[0].name" -o tsv
+  $existing = ((az role definition list --name $roleName --custom-role-only true -o json) -join "`n") | ConvertFrom-Json
+  $existing = @($existing) | Select-Object -First 1
   $roleFile = [IO.Path]::GetTempFileName()
   try {
-    # VÉRIFIER (D-7) : az role definition update accepte ce JSON (Id = nom GUID du rôle).
-    if ($roleId) { $roleDef["Id"] = $roleId }
-    [IO.File]::WriteAllText($roleFile, ($roleDef | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
-    if ($roleId) {
-      Invoke-Native { az role definition update --role-definition "@$roleFile" -o none } "mise à jour du rôle $roleName"
-    } else {
+    if (-not $existing) {
+      [IO.File]::WriteAllText($roleFile, ($roleDef | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
       Invoke-Native { az role definition create --role-definition "@$roleFile" -o none } "création du rôle $roleName"
+    }
+    elseif ((@($existing.permissions[0].dataActions | Sort-Object) -join "|") -eq (@($roleDef.DataActions | Sort-Object) -join "|") -and
+            @($existing.permissions[0].actions).Count -eq 0) {
+      Ok "rôle « $roleName » déjà à jour"
+    }
+    else {
+      # Mise à jour : az attend le format de « az role definition list » (id, name =
+      # GUID, roleName), pas celui de la création — sinon KeyError: 'roleName'.
+      $update = [ordered]@{
+        id               = $existing.id
+        name             = $existing.name
+        roleName         = $roleName
+        roleType         = "CustomRole"
+        description      = $roleDef.Description
+        assignableScopes = $roleDef.AssignableScopes
+        permissions      = @([ordered]@{ actions = @(); notActions = @(); dataActions = $roleDef.DataActions; notDataActions = @() })
+      }
+      [IO.File]::WriteAllText($roleFile, ($update | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
+      Invoke-Native { az role definition update --role-definition "@$roleFile" -o none } "mise à jour du rôle $roleName"
     }
   } finally { Remove-Item $roleFile -ErrorAction SilentlyContinue }
 
