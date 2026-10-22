@@ -75,7 +75,10 @@ et repris en fin de document.
 
 ## À faire hors du dépôt
 
-`.github/workflows` ne fait pas partie de ce dépôt. Les workflows doivent suivre :
+`.github/workflows` contient les workflows de la démo B : `agent-ready.yml` (équipe IA,
+`TF_VAR_plateforme` depuis la variable `PLATEFORME`) et les workflows réutilisables
+`agent-image.yml` / `agent-deploy.yml`. Les workflows Terraform de la plateforme (PR, apply)
+ne font pas partie de ce dépôt ; ils doivent suivre :
 
 - **Workflow PR** : connexion avec `AZURE_CLIENT_ID_PLAN`, puis
   `terraform fmt -check -recursive` et `terraform init -backend=false && terraform validate`
@@ -87,8 +90,6 @@ et repris en fin de document.
   `TF_VAR_authorized_principal_object_ids='["<oid>"]'` ; puis `prepare.ps1` (démo B) lancé une
   fois par un Owner. Sur un état existant, d'abord `terraform state rm` des deux attributions
   de l'équipe IA (voir README racine).
-- **`agent-ready.yml`** : `TF_VAR_plateforme` (variable `PLATEFORME`) à la place de
-  `platform_state`.
 - **Jeton fine-grained de l'équipe IA** : Administration, Contents, Workflows, Variables et
   **Actions** en lecture/écriture.
 - **Application GitHub de la démo D** : `-GitHubAppId` reçoit l'identifiant numérique (pas le

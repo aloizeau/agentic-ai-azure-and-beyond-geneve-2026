@@ -51,7 +51,7 @@ models/               optional: self-hosted model on AKS with KAITO (see its REA
 scripts/              preflight.sh (subscription checks), bootstrap-state.sh (state + CI identity)
 tools/                check_wiring.py (offline module wiring check)
 slides/               deck generators (pptxgenjs): build.js (50 min), build-rex.js (45-min REX, Geneva)
-.github/workflows/    terraform.yml (lint, plan, apply, destroy), guardrail-adapter.yml (tests, image), agent-ready.yml + reusable agent-image.yml / agent-deploy.yml (démo B)
+.github/workflows/    agent-ready.yml + reusable agent-image.yml / agent-deploy.yml (démo B); the Terraform workflows (PR, apply) are not in this repository (SECURITE.md)
 ```
 
 ## Prerequisites

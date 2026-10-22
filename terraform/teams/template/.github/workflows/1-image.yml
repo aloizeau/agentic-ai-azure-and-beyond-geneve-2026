@@ -1,0 +1,21 @@
+# Pipeline fourni par l'équipe IA (Agent Ready) : ne pas le modifier ici.
+# Un workflow écrit par l'équipe n'obtient aucun jeton Azure : seul le workflow
+# réutilisable ci-dessous, sur main, est fédéré avec id-__EQUIPE__-pipeline.
+name: 1 · Image
+on:
+  push:
+    branches: [main]
+    paths: ["mcp/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  image:
+    uses: __PLATFORM_REPO__/.github/workflows/agent-image.yml@__PLATFORM_REF__
+    with:
+      equipe: ${{ vars.EQUIPE }}
+      acr-name: ${{ vars.ACR_NAME }}
+      azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}

@@ -1,0 +1,98 @@
+# Workflow réutilisable de l'équipe IA — « 1 · Image » des dépôts agent-<équipe>.
+# docker build de mcp/, push dans le registre de la plateforme. Le dépôt de
+# l'équipe l'appelle en dix lignes (terraform/teams/template/.github/workflows/1-image.yml).
+#
+# Identité : id-<équipe>-pipeline, fédérée avec repo:<owner>/agent-<équipe>:ref:refs/heads/main
+# :job_workflow_ref:<ce dépôt>/.github/workflows/agent-image.yml@refs/heads/main.
+# Un workflow que l'équipe écrit elle-même n'obtient aucun jeton Azure.
+# Pas d'« environment » ici : il remplacerait « ref » dans le sujet OIDC.
+#
+# Entrées : les variables du dépôt de l'équipe (posées par Agent Ready), passées
+# par le pipeline appelant.
+name: agent-image
+
+on:
+  workflow_call:
+    inputs:
+      equipe: { description: "Nom de l'équipe (namespace)", required: true, type: string }
+      acr-name: { description: "Registre de la plateforme", required: true, type: string }
+      azure-client-id: { description: "Client ID d'id-<équipe>-pipeline", required: true, type: string }
+      azure-tenant-id: { description: "Tenant Entra ID", required: true, type: string }
+      azure-subscription-id: { description: "Abonnement", required: true, type: string }
+    outputs:
+      tag:
+        description: "Tag de l'image : SHA du dernier commit qui a modifié mcp/"
+        value: ${{ jobs.image.outputs.tag }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  image:
+    name: docker build → registre
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    env:
+      EQUIPE: ${{ inputs.equipe }}
+      ACR_NAME: ${{ inputs.acr-name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # le tag est le SHA du dernier commit qui touche mcp/
+          persist-credentials: false
+
+      - name: Tag de l'image
+        id: tag
+        # Même calcul dans agent-deploy.yml : un push qui ne touche que docs/
+        # redéploie l'image existante, sans la reconstruire.
+        run: |
+          tag=$(git log -1 --format=%H -- mcp/)
+          if [ -z "$tag" ]; then echo "::error::aucun commit dans mcp/"; exit 1; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image : $ACR_NAME.azurecr.io/$EQUIPE/docs-mcp:$tag"
+
+      - name: Sujet OIDC
+        # Doit être égal à la fédération github-main-image d'id-<équipe>-pipeline.
+        run: |
+          jwt=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          payload=$(cut -d. -f2 <<<"$jwt" | tr '_-' '/+')
+          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+          echo "sujet : $(base64 -d <<<"$payload" | jq -r .sub)"
+
+      - name: Connexion Azure (OIDC, aucun secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ inputs.azure-client-id }}
+          tenant-id: ${{ inputs.azure-tenant-id }}
+          subscription-id: ${{ inputs.azure-subscription-id }}
+
+      - name: docker build
+        run: docker build --pull -t "$ACR_NAME.azurecr.io/$EQUIPE/docs-mcp:${{ steps.tag.outputs.tag }}" mcp
+
+      - name: Push dans le registre (AcrPush seulement)
+        # AcrPush ne lit pas la ressource Azure du registre : az acr login échouerait.
+        # Échange direct du jeton Entra ID contre un jeton du registre (API
+        # oauth2/exchange). Réessais : un rôle tout juste attribué met quelques
+        # minutes à s'appliquer au premier run.
+        run: |
+          registry="$ACR_NAME.azurecr.io"
+          for i in $(seq 1 12); do
+            aad=$(az account get-access-token --query accessToken -o tsv)
+            refresh=$(curl -sS -X POST "https://$registry/oauth2/exchange" \
+              --data-urlencode grant_type=access_token --data-urlencode "service=$registry" \
+              --data-urlencode "tenant=${{ inputs.azure-tenant-id }}" --data-urlencode "access_token=$aad" | jq -r '.refresh_token // empty')
+            if [ -n "$refresh" ] \
+              && echo "$refresh" | docker login "$registry" -u 00000000-0000-0000-0000-000000000000 --password-stdin >/dev/null \
+              && docker push "$registry/$EQUIPE/docs-mcp:${{ steps.tag.outputs.tag }}"; then
+              echo "### Image \`$registry/$EQUIPE/docs-mcp:${{ steps.tag.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "registre pas encore accessible ($i/12), nouvel essai dans 20 s"
+            sleep 20
+          done
+          echo "::error::push refusé : rôle AcrPush d'id-$EQUIPE-pipeline ?"
+          exit 1
