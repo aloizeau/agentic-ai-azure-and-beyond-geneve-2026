@@ -32,3 +32,26 @@ def test_pipelines_call_the_ai_team_reusable_workflows():
     assert 'workflows: ["1 · Image"]' in deploy and "name: 1 · Image" in image
     reusable = ROOT.parents[1] / ".github" / "workflows"
     assert (reusable / "agent-image.yml").is_file() and (reusable / "agent-deploy.yml").is_file()
+
+
+def test_network_policies_belong_to_agent_ready_not_to_the_team():
+    """Les NetworkPolicies de l'équipe sont dans Terraform : le pipeline de
+    l'équipe (agentic-team-deployer) ne peut ni les modifier ni les supprimer."""
+    for p in (ROOT / "template").rglob("*.y*ml"):
+        assert "kind: NetworkPolicy" not in p.read_text(encoding="utf-8"), p
+    kz = (ROOT / "template" / "deploy" / "kustomization.yaml").read_text(encoding="utf-8")
+    assert "networkpolicy" not in kz.split("resources:")[1].split("images:")[0]
+    main = (ROOT / "main.tf").read_text(encoding="utf-8")
+    for name in ("equipe-sorties", "docs-mcp-entrees", "agents-vers-kagent"):
+        assert f'name      = "{name}"' in main, name
+    assert "agentgateway-public" not in main
+    teams = (ROOT.parent / "modules" / "platform" / "teams.tf").read_text(encoding="utf-8")
+    deployer = teams.split('"team_deployer"')[1].split("\n}\n")[0]
+    np_rule = deployer.split('"networkpolicies"')[1].split("}")[0]
+    assert '"create"' not in np_rule and '"delete"' not in np_rule and '"patch"' not in np_rule
+
+
+def test_mcp_target_starts_with_the_namespace():
+    """Admission equipes-services : la cible MCP commence par le namespace."""
+    main = (ROOT / "main.tf").read_text(encoding="utf-8")
+    assert re.search(r'mcp_target\s*=\s*"\$\{var\.equipe\}--', main)

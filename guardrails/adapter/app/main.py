@@ -8,6 +8,7 @@ always answers HTTP 200; a Reject is expressed by `status_code` in the body.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel
 
+from . import dlp
 from .backends import (
     CheckResult,
     Direction,
@@ -71,6 +73,57 @@ class GuardrailsResponseRequest(BaseModel):
     body: ResponseChoices
 
 
+# ------------------------------------------------------------- body size limit
+class BodySizeLimit:
+    """Middleware ASGI : refuse en 413 tout corps > `max_bytes`, AVANT le parsing
+    JSON. Content-Length est vérifié d'emblée ; un corps chunked est compté au
+    fil de la lecture (on ne fait pas confiance à l'en-tête seul)."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def _too_large(self, scope, receive, send) -> None:
+        resp = JSONResponse({"detail": f"request body exceeds {self.max_bytes} bytes"}, status_code=413)
+        await resp(scope, receive, send)
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        for k, v in scope.get("headers", []):
+            if k == b"content-length":
+                try:
+                    declared = int(v)
+                except ValueError:
+                    declared = self.max_bytes + 1  # en-tête invalide : refusé
+                if declared > self.max_bytes:
+                    await self._too_large(scope, receive, send)
+                    return
+        chunks, size, more = [], 0, True
+        while more:
+            msg = await receive()
+            if msg["type"] == "http.disconnect":
+                return
+            chunk = msg.get("body", b"")
+            size += len(chunk)
+            if size > self.max_bytes:
+                await self._too_large(scope, receive, send)
+                return
+            chunks.append(chunk)
+            more = msg.get("more_body", False)
+        body, replayed = b"".join(chunks), False
+
+        async def replay():
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+
 # ------------------------------------------------------------------ app wiring
 def build_backend(s: Settings) -> RailBackend:
     if s.backend == "microservice":
@@ -90,6 +143,7 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
 
     app = FastAPI(title="nemo-guardrail-adapter", version="0.1.0", lifespan=lifespan)
     app.state.settings = s
+    app.add_middleware(BodySizeLimit, max_bytes=s.max_body_bytes)
 
     def profile_of(req: Request) -> str:
         return (req.headers.get(s.profile_header) or s.default_profile).strip()
@@ -100,6 +154,10 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
     async def run(req: Request, messages: list[dict], direction: Direction) -> CheckResult | None:
         """Returns None when the engine failed (caller applies FAIL_MODE)."""
         profile = profile_of(req)
+        # Le moteur voit le texte normalisé (NFKC, sans caractères invisibles) :
+        # « 4111\u200b1111… » ou des chiffres pleine largeur ne contournent pas
+        # les regex. Le contenu d'origine n'est remplacé que sur un Mask.
+        messages = [{**m, "content": dlp.normalize(str(m.get("content", "")))} for m in messages]
         t0 = time.perf_counter()
         try:
             return await req.app.state.backend.check(profile, messages, direction)
@@ -125,29 +183,78 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
             decide(Direction.INPUT, "pass", None, req)
             return {"action": {"reason": "no user message to check"}}
 
-        # Rails see the conversation up to the newest user message.
-        res = await run(req, msgs[: user_idx + 1], Direction.INPUT)
+        def reject(rail: str, where: str = "", source: str = "NeMo rail") -> dict[str, Any]:
+            decide(Direction.INPUT, "reject", rail, req)
+            return {"action": {"status_code": s.reject_status, "body": refusal(rail),
+                               "reason": f"blocked by {source}: {rail}{where}"}}
 
-        if res is None:
-            if s.fail_mode == "open":
-                decide(Direction.INPUT, "pass", "engine-error", req)
-                return {"action": {"reason": "guardrail engine unavailable (fail-open)"}}
-            decide(Direction.INPUT, "reject", "engine-error", req)
-            return {"action": {"status_code": s.error_status,
-                               "body": "Contrôle de sécurité IA indisponible, requête refusée.",
-                               "reason": "guardrail engine unavailable (fail-closed)"}}
+        # 1. Carte bancaire sur le dernier message user : contrôle Python
+        #    (groupement + préfixe émetteur + Luhn, cf. app/dlp.py), avant tout
+        #    appel au moteur — comme les regex, il court-circuite le self check.
+        if dlp.find_card(msgs[user_idx]["content"]):
+            return reject(dlp.CARD_RAIL, source="adapter rail")
 
-        if res.verdict is Verdict.BLOCKED:
-            decide(Direction.INPUT, "reject", res.rail, req)
-            return {"action": {"status_code": s.reject_status, "body": refusal(res.rail),
-                               "reason": f"blocked by NeMo rail: {res.rail}"}}
+        # 2. Les messages qui suivent le dernier user (role `tool`, résultats
+        #    d'appels d'outils…) viennent de sources externes : un outil peut
+        #    lire et renvoyer un secret. Les messages `assistant` sont la sortie
+        #    du modèle, déjà vue en /response.
+        #    TOOL_RAILS=secrets (défaut) : motifs de secrets seulement, en
+        #    Python — ni motifs PII (versions, IP, dates d'une doc Learn ne sont
+        #    pas une fuite de données personnelles), ni self check LLM (un appel
+        #    par résultat d'outil, sous le timeout gateway de 3 s, faisait
+        #    refuser en fail-closed les requêtes à plusieurs outils).
+        tool_idx = [i for i, m in enumerate(msgs)
+                    if i > user_idx and m["role"] != "assistant" and m["content"]]
+        for i in tool_idx:
+            if dlp.find_secret(msgs[i]["content"]):
+                return reject(dlp.SECRET_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail")
+            # TOOL_RAILS=profile : rails PII complets, carte bancaire comprise
+            # (le motif carte n'est plus dans le YAML, il est ici).
+            if s.tool_rails == "profile" and dlp.find_card(msgs[i]["content"]):
+                return reject(dlp.CARD_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail")
 
-        if res.verdict is Verdict.MODIFIED and res.content != msgs[user_idx]["content"]:
-            masked = [dict(m) for m in msgs]  # message count must stay identical
-            masked[user_idx]["content"] = res.content
-            decide(Direction.INPUT, "mask", res.rail, req)
+        # 3. Rails du profil : la conversation jusqu'au dernier user ; avec
+        #    TOOL_RAILS=profile, aussi chaque message tool seul (en tant que
+        #    message `user`, les rails d'entrée ne regardent que celui-là).
+        #    Tous les contrôles partent EN PARALLÈLE : la latence est celle du
+        #    plus lent, pas la somme. Les verdicts sont lus dans l'ordre des
+        #    messages, la décision reste déterministe.
+        checks = [(user_idx, msgs[: user_idx + 1])]
+        if s.tool_rails == "profile":
+            checks += [(i, [{"role": "user", "content": msgs[i]["content"]}]) for i in tool_idx]
+        results = await asyncio.gather(*(run(req, conv, Direction.INPUT) for _, conv in checks))
+
+        masked: list[dict] | None = None
+        mask_rail: str | None = None
+        engine_failed = False
+        for (idx, _), res in zip(checks, results):
+            where = "" if idx == user_idx else f" ({msgs[idx]['role']} message #{idx})"
+
+            if res is None:
+                if s.fail_mode == "open":
+                    engine_failed = True
+                    continue
+                decide(Direction.INPUT, "reject", "engine-error", req)
+                return {"action": {"status_code": s.error_status,
+                                   "body": "Contrôle de sécurité IA indisponible, requête refusée.",
+                                   "reason": "guardrail engine unavailable (fail-closed)"}}
+
+            if res.verdict is Verdict.BLOCKED:
+                return reject(res.rail, where)
+
+            if res.verdict is Verdict.MODIFIED and res.content != msgs[idx]["content"]:
+                masked = masked or [dict(m) for m in msgs]  # message count must stay identical
+                masked[idx]["content"] = res.content
+                mask_rail = mask_rail or res.rail
+
+        if masked is not None:
+            decide(Direction.INPUT, "mask", mask_rail, req)
             return {"action": {"body": {"messages": masked},
-                               "reason": f"content transformed by NeMo rail: {res.rail or 'transform'}"}}
+                               "reason": f"content transformed by NeMo rail: {mask_rail or 'transform'}"}}
+
+        if engine_failed:  # fail-open : on laisse passer, comme avant
+            decide(Direction.INPUT, "pass", "engine-error", req)
+            return {"action": {"reason": "guardrail engine unavailable (fail-open)"}}
 
         decide(Direction.INPUT, "pass", None, req)
         return {"action": {"reason": "all input rails passed"}}

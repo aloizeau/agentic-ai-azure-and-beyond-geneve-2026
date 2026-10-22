@@ -930,7 +930,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       "1 · Équipe IA : gh workflow run agent-ready.yml -f equipe=equipe-docs ; dans GitHub, « Review deployments » → ai-team → Approve ; Terraform crée tout pour CETTE équipe, état teams/equipe-docs.tfstate. " +
       "2 · Preuve : identités et fédérations (GitHub main, ServiceAccount docs-mcp), stockage, namespace, RoleBinding, variables du dépôt. " +
       "3 · Équipe de dev : « 1 · Image » puis « 2 · Déploiement » s'enchaîne (workflow_run). Montrer les dix lignes de 1-image.yml : uses: <plateforme>/agent-image.yml@main. " +
-      "4 · tools/list sur /mcp-equipes : outils docs-equipe-docs_*, découverts par label ; 401 sans jeton. " +
+      "4 · tools/list sur /mcp-equipes : outils equipe-docs--docs_*, découverts par label ; 401 sans jeton. " +
       "5 · LibreChat : « Qui répond aux alertes d'astreinte ? » → astreinte.md. " +
       "6 · L'équipe pousse un document : seul « 2 · Déploiement » repart, l'agent connaît la soirée de ce soir. " +
       "Avant : un ticket, trois semaines, cinq équipes à relancer. Secours : vidéo démo B. Après : reset.ps1."

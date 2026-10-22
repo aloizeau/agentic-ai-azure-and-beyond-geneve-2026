@@ -4,6 +4,11 @@
 # ⚠️ Assumes the agentgateway deployer labels proxy pods with
 # gateway.networking.k8s.io/gateway-name (the Gateway API recommended label).
 # Check with: kubectl get pods -n agentgateway-system --show-labels
+#
+# Supervision : seuls les pods Prometheus (kube-prometheus-stack, label posé par
+# l'opérateur) et seulement sur le port scrapé — pas « tout le namespace
+# monitoring sur tous les ports » : Grafana, oauth2-proxy ou un sidecar de
+# dashboards n'ont rien à faire sur la porte non filtrée.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -13,14 +18,19 @@ spec:
     matchLabels: { app.kubernetes.io/name: guardrail-adapter }
   policyTypes: [Ingress]
   ingress:
+    # Les deux portes : garde-fous-llm s'applique aussi aux routes publiques
+    # (llm-public, llm-agents-public), servies par le proxy agentgateway-public.
     - from:
         - podSelector:
             matchExpressions:
-              - { key: gateway.networking.k8s.io/gateway-name, operator: In, values: [agentgateway-proxy] }
+              - { key: gateway.networking.k8s.io/gateway-name, operator: In, values: [agentgateway-proxy, agentgateway-public] }
       ports: [{ port: 8080 }]
+    # ServiceMonitor guardrail-adapter : port http (8080), /metrics.
     - from:
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: monitoring }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
       ports: [{ port: 8080 }]
 ---
 apiVersion: networking.k8s.io/v1
@@ -36,6 +46,11 @@ spec:
         - podSelector:
             matchLabels: { app.kubernetes.io/name: guardrail-adapter }
       ports: [{ port: 8080 }]
+    # PodMonitor du chart agentgateway : data plane :15020
+    # (terraform/modules/platform/main.tf, monitoring.proxy).
     - from:
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: monitoring }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
+      ports: [{ port: 15020 }]

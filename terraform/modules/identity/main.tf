@@ -111,10 +111,45 @@ resource "azuread_service_principal" "gateway_api" {
   count     = var.create_entra_apps ? 1 : 0
   client_id = azuread_application.gateway_api[0].client_id
   owners    = [data.azuread_client_config.current.object_id]
+
+  # Only assigned users and groups get a token for the gateway — through
+  # LibreChat as well as with the Azure CLI above. Without this, every account
+  # of the tenant, guests included, can call the models (and the public API).
+  app_role_assignment_required = true
+
+  lifecycle {
+    # Assignment required on every people-facing app: an empty list of allowed
+    # principals would lock everybody out, presenter included.
+    precondition {
+      condition     = length(local.authorized_principals) > 0
+      error_message = "Nobody could sign in: with assign_current_principal = false, authorized_principal_object_ids needs at least one user or group."
+    }
+  }
 }
 
 locals {
   librechat_host = coalesce(var.public_hostname, "librechat.localtest.me")
+
+  # Who may sign in: the identity running Terraform (the presenter on a
+  # workstation, unless assign_current_principal = false — CI) plus the users
+  # or groups of var.authorized_principal_object_ids, on every app that faces
+  # people (gateway API, LibreChat, portal). Stable keys: a CI apply and a
+  # workstation apply must compute the same set, or each removes the other's.
+  authorized_principals = toset(concat(
+    var.assign_current_principal ? [data.azuread_client_config.current.object_id] : [],
+    var.authorized_principal_object_ids,
+  ))
+  people_apps = merge(
+    var.create_entra_apps ? {
+      gateway_api = azuread_service_principal.gateway_api[0].object_id
+      librechat   = azuread_service_principal.librechat[0].object_id
+    } : {},
+    length(azuread_service_principal.portal) > 0 ? { portal = azuread_service_principal.portal[0].object_id } : {},
+  )
+  people_assignments = {
+    for pair in setproduct(keys(local.people_apps), local.authorized_principals) :
+    "${pair[0]}/${pair[1]}" => { app = pair[0], principal = pair[1] }
+  }
 }
 
 resource "azuread_application" "librechat" {
@@ -126,10 +161,12 @@ resource "azuread_application" "librechat" {
 
   web {
     # LibreChat's OpenID callback path.
-    redirect_uris = [
-      "https://${local.librechat_host}/oauth/openid/callback",
-      "http://localhost:3080/oauth/openid/callback",
-    ]
+    # localhost (port-forward) only when nothing is public: a published
+    # LibreChat keeps a single redirect URI, on its own domain.
+    redirect_uris = concat(
+      ["https://${local.librechat_host}/oauth/openid/callback"],
+      var.public_hostname == null ? ["http://localhost:3080/oauth/openid/callback"] : [],
+    )
     implicit_grant {
       access_token_issuance_enabled = false # authorization code flow only
       id_token_issuance_enabled     = false
@@ -166,6 +203,8 @@ resource "azuread_service_principal" "librechat" {
   count     = var.create_entra_apps ? 1 : 0
   client_id = azuread_application.librechat[0].client_id
   owners    = [data.azuread_client_config.current.object_id]
+
+  app_role_assignment_required = true
 }
 
 resource "azuread_application_password" "librechat" {
@@ -181,9 +220,9 @@ resource "azuread_application_password" "librechat" {
 # -----------------------------------------------------------------------------
 # "Portail" app for oauth2-proxy: the Entra ID sign-in in front of the admin
 # UIs published on the internet (Grafana, kagent UI), which have no sign-in of
-# their own in this PoC. Single tenant: only accounts of this tenant get in.
-# To restrict further, set app_role_assignment_required on the service
-# principal and assign the people or groups allowed.
+# their own in this PoC. Single tenant, and assignment required: only the
+# users and groups assigned below get in (guests and the rest of the tenant
+# are refused by Entra ID before oauth2-proxy sees them).
 # -----------------------------------------------------------------------------
 resource "azuread_application" "portal" {
   count = var.create_entra_apps && var.public_hosts != null ? 1 : 0
@@ -224,6 +263,18 @@ resource "azuread_service_principal" "portal" {
   count     = length(azuread_application.portal)
   client_id = azuread_application.portal[0].client_id
   owners    = [data.azuread_client_config.current.object_id]
+
+  app_role_assignment_required = true
+}
+
+# Default access (no app role defined: the all-zero role ID) for each allowed
+# principal on each people-facing app.
+resource "azuread_app_role_assignment" "people" {
+  for_each = local.people_assignments
+
+  app_role_id         = "00000000-0000-0000-0000-000000000000"
+  principal_object_id = each.value.principal
+  resource_object_id  = local.people_apps[each.value.app]
 }
 
 resource "azuread_application_password" "portal" {

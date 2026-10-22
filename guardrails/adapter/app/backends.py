@@ -102,6 +102,9 @@ class MicroserviceBackend:
     """
 
     name = "microservice"
+    # Liste blanche : tout statut absent ou inconnu lève une exception, pour que
+    # FAIL_MODE=closed s'applique au lieu de laisser passer par défaut.
+    _PASSED = {"success", "passed"}
     _BLOCKED = {"blocked", "failure", "failed", "error"}
 
     def __init__(self, base_url: str, model: str, timeout_s: float):
@@ -112,16 +115,39 @@ class MicroserviceBackend:
     def profiles(self) -> list[str]:
         return []  # config ids live in the microservice config store
 
+    @classmethod
+    def _status(cls, raw: object, where: str) -> Verdict:
+        st = str(raw or "").strip().lower()
+        if st in cls._PASSED:
+            return Verdict.PASSED
+        if st in cls._BLOCKED:
+            return Verdict.BLOCKED
+        # « skipped » (rail non exécuté) ou statut absent : on ne sait pas si le
+        # contrôle a eu lieu, donc panne moteur -> FAIL_MODE (fermé par défaut).
+        # Message explicite : sans lui, un refus systématique en mode
+        # microservice ressemble à une panne réseau. VÉRIFIER (D-7) : valeurs
+        # réelles de `status` sur une instance NVIDIA sous licence.
+        kind = "missing" if raw is None or st == "" else ("skipped" if st == "skipped" else "unknown")
+        log.error("microservice guardrail status %s (%r) for %s: treated as an engine failure, "
+                  "FAIL_MODE applies (closed => request refused). Extend _PASSED/_BLOCKED only "
+                  "after checking the microservice semantics.", kind, raw, where)
+        raise ValueError(f"unexpected guardrail status {raw!r} ({kind}) for {where}")
+
     async def check(self, profile: str, messages: list[dict], direction: Direction) -> CheckResult:
         payload = {"model": self._model, "messages": messages, "guardrails": {"config_id": profile}}
         r = await self._client.post(self._url, json=payload)
         r.raise_for_status()
         body = r.json()
+        if not isinstance(body, dict):
+            raise ValueError("unexpected guardrail checks response")
         rails = body.get("rails_status") or {}
+        if not isinstance(rails, dict):
+            raise ValueError("unexpected rails_status in guardrail checks response")
         for rail, st in rails.items():
-            if str((st or {}).get("status", "")).lower() in self._BLOCKED:
+            raw = st.get("status") if isinstance(st, dict) else None
+            if self._status(raw, f"rail {rail}") is Verdict.BLOCKED:
                 return CheckResult(Verdict.BLOCKED, "", rail)
-        if str(body.get("status", "")).lower() in self._BLOCKED:
+        if self._status(body.get("status"), "global status") is Verdict.BLOCKED:
             return CheckResult(Verdict.BLOCKED, "", None)
         return CheckResult(Verdict.PASSED, _last_content(messages))
 

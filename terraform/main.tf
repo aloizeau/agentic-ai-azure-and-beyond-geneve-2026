@@ -21,6 +21,9 @@ module "foundation" {
 
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   aks_admin_group_object_ids = var.aks_admin_group_object_ids
+  admin_principal_object_id  = var.aks_admin_current_principal ? data.azurerm_client_config.current.object_id : null
+
+  api_server_authorized_ip_ranges = var.aks_api_authorized_ip_ranges
 }
 
 # « Agent Ready » teams (démo B): the teams' resource group and the AI team
@@ -34,7 +37,9 @@ module "agent_ready" {
   tags                      = local.tags
   acr_id                    = module.foundation.acr_id
   aks_id                    = module.foundation.cluster_id
+  aks_oidc_issuer_url       = module.foundation.oidc_issuer_url
   ai_team_github_repository = var.ai_team_github_repository
+  manage_role_assignments   = var.ai_team_manage_role_assignments
 }
 
 module "ai" {
@@ -93,9 +98,11 @@ module "identity" {
     },
   )
 
-  create_entra_apps = var.create_entra_apps
-  public_hostname   = try(local.public_hosts.chat, null)
-  public_hosts      = local.public_hosts
+  create_entra_apps               = var.create_entra_apps
+  authorized_principal_object_ids = var.authorized_principal_object_ids
+  assign_current_principal        = var.assign_current_principal
+  public_hostname                 = try(local.public_hosts.chat, null)
+  public_hosts                    = local.public_hosts
 }
 
 # -----------------------------------------------------------------------------
@@ -122,7 +129,7 @@ module "platform" {
   gateway_scope           = module.identity.gateway_scope
 
   enable_nemo_guardrails  = var.enable_nemo_guardrails
-  guardrail_adapter_image = var.guardrail_adapter_image
+  guardrail_adapter_image = coalesce(var.guardrail_adapter_image, "${module.foundation.acr_login_server}/plateforme/nemo-guardrail-adapter:0.1.0")
   foundry_account_name    = module.ai.foundry_account_name
   foundry_project_name    = module.ai.foundry_project_name
 
@@ -140,7 +147,7 @@ module "platform" {
 
   # Public exposure (null = none): hosts, static IP, oauth2-proxy app.
   public_hosts         = local.public_hosts
-  public_expose_api    = try(var.public_exposure.expose_api, true)
+  public_expose_api    = try(var.public_exposure.expose_api, false)
   public_ip_name       = module.foundation.public_ip_name
   public_ip_rg         = module.foundation.resource_group_name
   acme_email           = try(var.public_exposure.acme_email, null)

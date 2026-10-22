@@ -1,6 +1,8 @@
 # Only the gateway proxies may call the model. Nobody reaches vLLM directly —
 # not LibreChat, not an agent: every token goes through the gateway, so every
 # token is authenticated, guarded and metered.
+# Proxy interne seulement : les routes llm-aks* ne sont attachées qu'à
+# agentgateway-proxy (la porte publique ne sert pas ce modèle).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -18,7 +20,11 @@ spec:
           podSelector:
             matchLabels: { gateway.networking.k8s.io/gateway-name: agentgateway-proxy }
       ports: [{ port: 5000 }]           # Service :80 -> vLLM :5000
+    # Supervision : Prometheus seul (PodMonitor kaito-vllm, :5000/metrics),
+    # pas tout le namespace monitoring.
     - from:
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: monitoring }
+          podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus }
       ports: [{ port: 5000 }]

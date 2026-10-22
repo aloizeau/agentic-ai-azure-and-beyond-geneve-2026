@@ -233,7 +233,7 @@ variable "public_exposure" {
       https://demos.<zone>          LibreChat (Entra ID sign-in)
       https://grafana.demos.<zone>  Grafana, behind oauth2-proxy (Entra ID)
       https://kagent.demos.<zone>   kagent UI, behind oauth2-proxy (Entra ID)
-      https://api.demos.<zone>      /v1 (Entra ID token) and /agents/v1 (team key)
+      https://api.demos.<zone>      /v1 and /agents/v1, only with expose_api = true
 
     DNS records are "DNS only" (grey cloud): Cloudflare's free Universal SSL does
     not cover second-level names such as grafana.demos.<zone>.
@@ -243,9 +243,34 @@ variable "public_exposure" {
     zone       = string
     subdomain  = optional(string, "demos")
     acme_email = optional(string)
-    expose_api = optional(bool, true)
+    expose_api = optional(bool, false) # the LLM API on the internet: opt in
   })
   default = null
+}
+
+variable "authorized_principal_object_ids" {
+  description = <<-EOT
+    Entra ID users or groups (object IDs) allowed to sign in: gateway API (models,
+    tools, the Azure CLI token of the demos), LibreChat and the portal in front of
+    Grafana and the kagent UI. The identity running Terraform is added too, unless
+    assign_current_principal = false. Every one of these apps requires an
+    assignment: the rest of the tenant, guests included, is refused by Entra ID.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "assign_current_principal" {
+  description = <<-EOT
+    Allow the identity running Terraform to sign in (app role assignment on the
+    gateway API, LibreChat and the portal). true: the presenter's workstation.
+    false in CI: the CI identity is not a person, and the assignments would
+    change with whoever runs the apply (a CI apply would remove the presenter's
+    — AADSTS50105). With false, put the presenter (or a group) in
+    authorized_principal_object_ids: it must not be empty.
+  EOT
+  type        = bool
+  default     = true
 }
 
 variable "create_entra_apps" {
@@ -300,9 +325,19 @@ variable "enable_nemo_guardrails" {
 }
 
 variable "guardrail_adapter_image" {
-  description = "Container image of the NeMo Guardrails adapter (built by the guardrail-adapter workflow)."
+  description = <<-EOT
+    Container image of the NeMo Guardrails adapter. null (default) = the
+    platform registry: <acr>/plateforme/nemo-guardrail-adapter:0.1.0, built by
+    scripts/deploy.ps1 (az acr build) between phase 1 and phase 2. Set it to use
+    another registry, e.g. the image pushed by the guardrail-adapter workflow.
+  EOT
   type        = string
-  default     = "ghcr.io/OWNER/nemo-guardrail-adapter:0.1.0"
+  default     = null
+
+  validation {
+    condition     = var.guardrail_adapter_image == null || can(regex("^[a-z0-9][a-z0-9._/:-]*$", var.guardrail_adapter_image))
+    error_message = "guardrail_adapter_image must be a lowercase image reference (registry/repository:tag)."
+  }
 }
 
 # -----------------------------------------------------------------------------
@@ -374,11 +409,51 @@ variable "ai_team_github_repository" {
   default     = null
 }
 
+variable "ai_team_manage_role_assignments" {
+  description = <<-EOT
+    Who gives the AI team identity its Azure roles (Contributor on
+    rg-<base>-equipes, RBAC Administrator under an ABAC condition).
+    true: Terraform — a person with Owner runs it (./scripts/deploy.ps1).
+    false: the CI apply identity, which may not hand out these two roles
+    (scripts/bootstrap-state.sh), leaves them alone; a person with Owner
+    creates them once with demos/B-agent-equipe/prepare.ps1 (output
+    ai_team_role_assignments). Switching an existing state to false: first
+    `terraform state rm` the two module.agent_ready role assignments, or the
+    apply tries to delete them.
+  EOT
+  type        = bool
+  default     = true
+}
+
 # -----------------------------------------------------------------------------
 # AKS API authentication (Entra ID)
 # -----------------------------------------------------------------------------
 variable "aks_admin_group_object_ids" {
   description = "Entra ID groups bound to cluster-admin on the AKS API (Entra ID authentication is on). Empty: admin kubeconfig only (az aks get-credentials --admin)."
+  type        = list(string)
+  default     = []
+}
+
+variable "aks_admin_current_principal" {
+  description = <<-EOT
+    Grant the identity running Terraform full administration of the AKS cluster,
+    on the cluster scope: Azure Kubernetes Service RBAC Cluster Admin (Kubernetes
+    API through Entra ID: kubelogin, no --admin), Cluster Admin Role (kubeconfigs)
+    and Contributor Role (upgrades, node pools, add-ons). true: the presenter's
+    workstation (Owner). false in CI: the CI identity may only grant the roles of
+    its ABAC condition (scripts/bootstrap-state.sh), and its Contributor on the
+    subscription already covers the AKS resource and the admin kubeconfig.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "aks_api_authorized_ip_ranges" {
+  description = <<-EOT
+    CIDR ranges allowed to reach the AKS API server (your workstation, the CI
+    runners' egress). Empty (default) = reachable from the internet, protected
+    by authentication only. Example: ["203.0.113.10/32"].
+  EOT
   type        = list(string)
   default     = []
 }

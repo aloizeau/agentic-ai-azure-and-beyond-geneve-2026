@@ -1,16 +1,8 @@
-data "terraform_remote_state" "platform" {
-  backend = "azurerm"
-  config = {
-    resource_group_name  = var.platform_state.resource_group_name
-    storage_account_name = var.platform_state.storage_account_name
-    container_name       = var.platform_state.container_name
-    key                  = var.platform_state.key
-    use_azuread_auth     = true
-  }
-}
-
+# The platform's non-secret outputs (terraform output plateforme_pour_equipes),
+# passed in as a variable — never read from the platform state, which holds
+# the admin kubeconfig and the Entra app secrets.
 locals {
-  p = data.terraform_remote_state.platform.outputs
+  p = var.plateforme
 }
 
 provider "azurerm" {

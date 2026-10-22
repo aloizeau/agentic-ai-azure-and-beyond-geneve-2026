@@ -1,5 +1,5 @@
 # Serveurs MCP d'entreprise auto-hébergés, atteints uniquement par la gateway.
-# Chacun sert en streamable-http sur :9000 (chemin /mcp). Secrets créés hors
+# Chacun sert en HTTP MCP sur :9000 (chemin /mcp ; / pour Azure). Secrets créés hors
 # dépôt par run.sh. Les images/flags marqués « VÉRIFIER » sont à confirmer et
 # épingler (digest) à la répétition D-7 — même exigence que jira/duckduckgo.
 # ---------------------------------------------------------------------------
@@ -24,8 +24,22 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: mcp
-          image: mcp/grafana:latest          # VÉRIFIER (registre/tag), puis épingler un digest
-          args: ["-t", "streamable-http", "-address", "0.0.0.0:9000"]
+          # VÉRIFIER (D-7) : épingler par digest. Tag non résolu depuis
+          # l'environnement de revue (Docker Hub injoignable). Image officielle :
+          # grafana/mcp-grafana ; épingler une version exacte (vX.Y.Z) puis un
+          # digest — jamais latest le jour J.
+          image: mcp/grafana:latest
+          # --disable-write : lecture seule (pas de création/modification de
+          # dashboards, pas de SQL brut). --allowed-hosts : le Host reçu derrière
+          # la passerelle est le nom du Service (sinon 403 par défaut).
+          args:
+            - "-t"
+            - "streamable-http"
+            - "-address"
+            - "0.0.0.0:9000"
+            - "--disable-write"
+            - "--allowed-hosts"
+            - "mcp-grafana.outils-entreprise.svc.cluster.local:9000,mcp-grafana.outils-entreprise.svc.cluster.local"   # VÉRIFIER le Host envoyé par la passerelle
           envFrom:
             - secretRef: { name: grafana-mcp-credentials }   # GRAFANA_URL, GRAFANA_API_KEY
           ports: [{ containerPort: 9000 }]
@@ -52,6 +66,21 @@ spec:
   ports: [{ port: 9000, targetPort: 9000 }]
 ---
 # Azure — « visualiser mes ressources Azure » (Resource Graph, AKS, coûts).
+# Même serveur que la démo D (demos/D-agent-ops/plateforme/azure-mcp.yaml) :
+# image Microsoft, transport HTTP, lecture seule. Différences : port 9000 (celui
+# de la NetworkPolicy et du backend) et un principal de service à secret
+# (Secret azure-mcp-credentials créé par run.sh) au lieu de Workload Identity.
+# Mode « all » : un outil MCP par commande (aks_cluster_get…), pour que la
+# liste blanche de la passerelle (gateway.yaml) porte sur la commande elle-même.
+# En mode « namespace », un outil par domaine (aks, monitor…) prend la commande
+# en argument : filtrer le nom de l'outil ne borne alors rien.
+# Limite assumée : une seule identité Azure (le principal de service) pour
+# toutes les personnes qui passent par la passerelle — le serveur ne sait pas
+# qui est derrière. Lui donner Reader, sur les seuls groupes de ressources
+# utiles ; étape suivante : --outgoing-auth-strategy UseOnBehalfOf.
+# Pourquoi --dangerously-disable-http-incoming-auth : voir l'en-tête de la démo
+# D ; la NetworkPolicy mcp-azure (seuls les proxys de la passerelle) en est la
+# condition.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -67,20 +96,44 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
+        runAsUser: 1000                       # VÉRIFIER (D-7) : utilisateur de l'image
         runAsGroup: 1000
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: mcp
-          image: node:22-bookworm-slim       # VÉRIFIER, puis épingler un digest
-          command: ["npx"]
-          # VÉRIFIER le nom exact du transport/port d'@azure/mcp (server start).
-          args: ["-y", "@azure/mcp@latest", "server", "start", "--transport", "streamable-http", "--port", "9000"]
+          # VÉRIFIER (D-7) : épingler par digest (tag mobile, non résolu depuis
+          # l'environnement de revue) — même image que la démo D.
+          image: mcr.microsoft.com/azure-sdk/azure-mcp:latest
+          # Ne pas surcharger « command » : l'image démarre déjà « server start ».
+          # --read-only + 4 domaines : on « visualise » Azure, on ne le modifie
+          # pas, quel que soit le rôle du principal de service.
+          args:
+            - --transport
+            - http
+            - --outgoing-auth-strategy
+            - UseHostingEnvironmentIdentity
+            - --dangerously-disable-http-incoming-auth   # NetworkPolicy mcp-azure obligatoire
+            - --read-only
+            - --mode
+            - all                                      # VÉRIFIER (D-7) : valeur acceptée, noms d'outils (tools/list)
+            - --namespace
+            - aks
+            - --namespace
+            - group
+            - --namespace
+            - monitor
+            - --namespace
+            - resourcehealth                           # VÉRIFIER (D-7) : noms des domaines (azmcp --help)
           env:
+            - { name: ASPNETCORE_URLS, value: "http://+:9000" }
+            - { name: ASPNETCORE_ENVIRONMENT, value: Production }
+            - { name: AZURE_TOKEN_CREDENTIALS, value: EnvironmentCredential }   # VÉRIFIER (D-7) : AZURE_TENANT_ID/CLIENT_ID/CLIENT_SECRET
+            - { name: AZURE_MCP_INCLUDE_PRODUCTION_CREDENTIALS, value: "true" }
+            - { name: AZURE_MCP_DANGEROUSLY_DISABLE_HTTPS_REDIRECTION, value: "true" } # HTTP dans le cluster
+            - { name: AZURE_MCP_COLLECT_TELEMETRY, value: "false" }
             - { name: HOME, value: /tmp }
-            - { name: npm_config_cache, value: /tmp/.npm }
           envFrom:
-            - secretRef: { name: azure-mcp-credentials }     # AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET (préférer Workload Identity)
+            - secretRef: { name: azure-mcp-credentials }     # AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET (préférer Workload Identity, comme la démo D)
           ports: [{ containerPort: 9000 }]
           securityContext:
             allowPrivilegeEscalation: false
@@ -88,9 +141,8 @@ spec:
             capabilities: { drop: ["ALL"] }
           readinessProbe:
             tcpSocket: { port: 9000 }
-            initialDelaySeconds: 15            # npx installe le paquet au 1er démarrage
+            initialDelaySeconds: 5
             periodSeconds: 10
-            failureThreshold: 12
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: 500m, memory: 512Mi }
@@ -108,6 +160,14 @@ spec:
   ports: [{ port: 9000, targetPort: 9000 }]
 ---
 # Microsoft Graph / M365 — « visualiser SharePoint / OneDrive / Teams ».
+#
+# ⚠️ ATTENTION — À LAISSER DÉSACTIVÉ dans le dépôt public (enable_enterprise_tools).
+# Identifiants app-only (secret + consentement admin) : CHAQUE utilisateur
+# LibreChat voit tout ce que l'APPLICATION voit — tous les sites SharePoint,
+# OneDrive, équipes du tenant autorisés à l'app — sans tenir compte de ses
+# propres droits. La passerelle authentifie la personne, mais Graph ne voit que
+# l'app. À n'activer qu'avec des permissions Sites.Selected (sites listés
+# explicitement) ou en délégué / On-Behalf-Of (--obo), jamais Sites.Read.All.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -128,10 +188,13 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: mcp
-          image: node:22-bookworm-slim       # VÉRIFIER, puis épingler un digest
+          image: node:22-bookworm-slim       # VÉRIFIER (D-7) : épingler par digest
           command: ["npx"]
-          # VÉRIFIER le flag http/port de @softeria/ms-365-mcp-server.
-          args: ["-y", "@softeria/ms-365-mcp-server", "--http", "9000"]
+          # Version exacte (npm view @softeria/ms-365-mcp-server version, 2026-10-13).
+          # --read-only : outils de lecture seulement (pas d'envoi, pas d'écriture).
+          # VÉRIFIER (D-7) : en --http le serveur attend un jeton OAuth par requête
+          # (README) ; vérifier la cohabitation avec les identifiants app-only.
+          args: ["-y", "@softeria/ms-365-mcp-server@0.162.0", "--http", "9000", "--read-only"]
           env:
             - { name: HOME, value: /tmp }
             - { name: npm_config_cache, value: /tmp/.npm }

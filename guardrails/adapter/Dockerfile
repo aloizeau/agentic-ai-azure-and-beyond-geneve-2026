@@ -1,4 +1,5 @@
 # NeMo Guardrails adapter for the agentgateway webhook guardrail API.
+# VÉRIFIER : épingler par digest (python:3.12-slim@sha256:…) — digest non résolu, registre inaccessible lors de l'audit.
 FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1

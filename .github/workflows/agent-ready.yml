@@ -1,0 +1,143 @@
+# « Agent Ready » — le pipeline de l'équipe IA : tout ce qu'une équipe de dev
+# reçoit pour son agent, en un terraform apply (terraform/teams), un état par
+# équipe (teams/<équipe>.tfstate). Préparation, une fois : demos/B-agent-equipe/prepare.ps1.
+name: Agent Ready
+run-name: "Agent Ready · ${{ inputs.action }} · ${{ inputs.equipe }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      equipe:
+        description: "Nom de l'équipe : namespace, identités, stockage, dépôt agent-<équipe>"
+        required: true
+        type: string
+      description:
+        description: "À quoi sert l'agent (description du dépôt)"
+        required: false
+        type: string
+        default: "Agent de l'équipe"
+      action:
+        description: "apply : créer ou mettre à jour · destroy : tout supprimer"
+        required: true
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+permissions:
+  contents: read
+  id-token: write # OIDC : identité id-<base>-ai-team, fédérée avec l'environnement ai-team
+
+concurrency:
+  group: agent-ready-${{ inputs.equipe }}
+  cancel-in-progress: false
+
+jobs:
+  agent-ready:
+    name: ${{ inputs.action }} · ${{ inputs.equipe }}
+    runs-on: ubuntu-latest
+    # Approbation obligatoire, branche main seulement (prepare.ps1). La fédération
+    # Azure ne reconnaît que ce sujet : repo:<ce dépôt>:environment:ai-team.
+    environment: ai-team
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: terraform/teams
+    env:
+      # Entrées passées par l'environnement, jamais interpolées dans un script.
+      EQUIPE: ${{ inputs.equipe }}
+      ACTION: ${{ inputs.action }}
+      TF_VAR_equipe: ${{ inputs.equipe }}
+      TF_VAR_description: ${{ inputs.description }}
+      TF_VAR_github_owner: ${{ github.repository_owner }}
+      TF_VAR_platform_repository: ${{ github.repository }}
+      TF_VAR_platform_ref: main
+      # Sorties NON sensibles de la plateforme (prepare.ps1) : ce pipeline ne lit
+      # jamais l'état de la plateforme (kubeconfig admin, secrets Entra).
+      TF_VAR_plateforme: ${{ vars.PLATEFORME }}
+      # Provider github : jeton fine-grained de l'équipe IA (secret d'environnement).
+      GITHUB_TOKEN: ${{ secrets.AI_TEAM_GITHUB_TOKEN }}
+      TFSTATE_RG: ${{ vars.TFSTATE_RG }}
+      TFSTATE_ACCOUNT: ${{ vars.TFSTATE_ACCOUNT }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+    steps:
+      - name: Nom d'équipe
+        run: |
+          if ! printf '%s' "$EQUIPE" | grep -Eq '^[a-z][a-z0-9-]{1,18}[a-z0-9]$' || [[ "$EQUIPE" == *--* ]]; then
+            echo "::error::nom d'équipe invalide : 3 à 20 caractères, minuscules, chiffres et tirets, pas de « -- »"
+            exit 1
+          fi
+          if [ -z "$TF_VAR_plateforme" ] || [ -z "$GITHUB_TOKEN" ]; then
+            echo "::error::variable PLATEFORME ou secret AI_TEAM_GITHUB_TOKEN absent : lancer demos/B-agent-equipe/prepare.ps1"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Connexion Azure (OIDC, aucun secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AI_TEAM_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: kubectl et kubelogin
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          az aks install-cli --install-location "$HOME/.local/bin/kubectl" \
+            --kubelogin-install-location "$HOME/.local/bin/kubelogin" --only-show-errors
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Qui suis-je dans Kubernetes
+        # Le sujet Kubernetes de l'identité (object ID) : c'est lui que borne la
+        # politique d'admission agent-ready-perimetre. Kubeconfig construit depuis
+        # PLATEFORME, jeton Entra ID par kubelogin : aucun rôle Azure sur le cluster.
+        run: |
+          server=$(jq -r .aks_api_server <<<"$TF_VAR_plateforme")
+          jq -r .aks_ca_certificate <<<"$TF_VAR_plateforme" | base64 -d > "$RUNNER_TEMP/ca.crt"
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          kubectl config set-cluster aks --server="$server" --certificate-authority="$RUNNER_TEMP/ca.crt" --embed-certs >/dev/null
+          kubectl config set-credentials ai-team --exec-api-version=client.authentication.k8s.io/v1beta1 \
+            --exec-command=kubelogin --exec-arg=get-token --exec-arg=--login --exec-arg=azurecli \
+            --exec-arg=--server-id --exec-arg=6dae42f8-4368-4678-94ff-3960e28e3630 >/dev/null
+          kubectl config set-context aks --cluster=aks --user=ai-team >/dev/null
+          kubectl config use-context aks >/dev/null
+          kubectl auth whoami
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+
+      - name: terraform init (teams/${{ inputs.equipe }}.tfstate)
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${TFSTATE_RG}" \
+            -backend-config="storage_account_name=${TFSTATE_ACCOUNT}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=teams/${EQUIPE}.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: terraform apply
+        if: inputs.action == 'apply'
+        run: |
+          terraform plan -out=equipe.tfplan
+          terraform apply equipe.tfplan
+          {
+            echo "### Équipe \`$EQUIPE\` : Agent Ready"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Dépôt | $(terraform output -raw repository_url) |"
+            echo "| Namespace | \`$(terraform output -raw namespace)\` |"
+            echo "| Stockage | \`$(terraform output -raw storage_account)\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: terraform destroy
+        if: inputs.action == 'destroy'
+        run: |
+          terraform destroy -auto-approve
+          echo "### Équipe \`$EQUIPE\` supprimée" >> "$GITHUB_STEP_SUMMARY"

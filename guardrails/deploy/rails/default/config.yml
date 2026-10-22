@@ -1,3 +1,20 @@
+# Ces regex sont une première ligne de défense, pas un DLP : elles arrêtent
+# les fuites évidentes (copier-coller), pas un attaquant qui encode ou
+# découpe la donnée. Syntaxe : module Python `re` (search), `(?i)` en tête
+# plutôt que `case_insensitive` pour rester portable vers le microservice.
+# Séparateurs tolérés : espace, point, tiret ([\s.\-]). L'adaptateur
+# normalise le texte avant de l'envoyer ici (NFKC, caractères de largeur
+# nulle supprimés) : chiffres pleine largeur et U+200B ne contournent rien.
+# Garder default/ et strict/ identiques.
+#
+# Ce qui n'est PAS ici, mais dans l'adaptateur (adapter/app/dlp.py) :
+#   - cartes bancaires : une regex ne sait pas vérifier la clé de Luhn, et
+#     l'ancien motif bloquait versions, IP, dates, téléphones, SIRET ;
+#   - messages `tool` : par défaut (TOOL_RAILS=secrets), seuls les 5 motifs
+#     « secrets » ci-dessous leur sont appliqués (copie Python, égalité
+#     vérifiée par un test), pas les motifs de données personnelles ni le
+#     self check LLM.
+
 # Profile "default" — deterministic rails only: no LLM call, sub-10 ms, CPU.
 # Same file works with the NeMo Guardrails library AND the NVIDIA microservice
 # (NVIDIA: "Configurations are portable between the library and microservice").
@@ -7,19 +24,24 @@ rails:
       input:
         patterns:
           # Secrets pasted into prompts — the 60 000 € weekend started with a key.
-          - '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b'        # OpenAI-style keys
-          - '\bAKIA[0-9A-Z]{16}\b'                         # AWS access key id
-          - '\bgh[pousr]_[A-Za-z0-9]{36,}\b'               # GitHub tokens
-          - '(?i)\b(?:api[_-]?key|secret|password|mot de passe)\s*[:=]\s*\S{12,}'
+          - '(?i)\bsk-(?:proj-|ant-)?[a-z0-9_-]{20,}'                                  # OpenAI / Anthropic-style keys
+          - '(?i)\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'                                       # AWS access key id
+          - '(?i)\b(?:gh[pousr]_[a-z0-9]{36,}|github_pat_[a-z0-9_]{22,})'              # GitHub tokens
+          - '(?i)-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----'
+          # `clé: valeur` — valeur ≥ 8 car., avec un chiffre ou un symbole, pas un renvoi
+          # ($VAR, <…>, {…}, ****) : « mot de passe: introuvable » n'est pas un secret.
+          - '(?i)\b(?:api[_-]?key|access[_-]?key|account[_-]?key|client[_-]?secret|secret|token|password|passwd|pwd|mot de passe|mdp)\s*[:=]\s*["'']?(?![$%<{\[*])(?=[^\s"'']*?[0-9@#%^&+=/\\|~_])[^\s"'']{8,}'
           # Personal data
-          - '\b(?:\d[ -]?){13,16}\b'                        # payment card numbers
-          - '\bFR\d{2}(?: ?\d{4}){5}(?: ?\d{3})\b'         # French IBAN
-          - '\b[12] ?\d{2} ?(?:0[1-9]|1[0-2]) ?(?:\d{2}|2[AB]) ?\d{3} ?\d{3} ?\d{2}\b'  # French NIR
+          - '(?i)\bFR[\s.\-]?\d{2}(?:[\s.\-]?[0-9a-z]{4}){5}[\s.\-]?[0-9a-z]{3}\b'     # French IBAN
+          # French NIR, clé (2 chiffres) obligatoire : sans elle, un horodatage en ms
+          # (« 1760342400123 ») avait exactement la forme d'un NIR.
+          - '(?i)\b[12][\s.\-]?\d{2}[\s.\-]?(?:0[1-9]|1[0-2])[\s.\-]?(?:\d{2}|2[ab])[\s.\-]?\d{3}[\s.\-]?\d{3}[\s.\-]?\d{2}\b'
       output:
         patterns:
-          - '\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b'
-          - '\bAKIA[0-9A-Z]{16}\b'
-          - '-----BEGIN (?:RSA |EC )?PRIVATE KEY-----'
+          - '(?i)\bsk-(?:proj-|ant-)?[a-z0-9_-]{20,}'
+          - '(?i)\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'
+          - '(?i)\b(?:gh[pousr]_[a-z0-9]{36,}|github_pat_[a-z0-9_]{22,})'
+          - '(?i)-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----'
     injection_detection:
       # YARA rules shipped with NeMo Guardrails. Checks what the model returns,
       # which matters when an agent's output becomes a tool input.

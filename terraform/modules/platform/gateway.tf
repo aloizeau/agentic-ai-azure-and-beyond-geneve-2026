@@ -31,14 +31,18 @@ locals {
           { op = "replace", path = "/spec/serviceAccount/metadata/annotations/azure.workload.identity~1client-id", value = var.workload_identity_client_ids["agentgateway"] },
         ])
       },
-      {
-        target = { group = "agentgateway.dev", kind = "AgentgatewayPolicy", name = "acces-llm" }
+    ],
+    # The same Entra ID check on both people-facing policies: models (acces-llm)
+    # and tools (acces-outils, request ceiling instead of a token ceiling).
+    [
+      for policy in ["acces-llm", "acces-outils"] : {
+        target = { group = "agentgateway.dev", kind = "AgentgatewayPolicy", name = policy }
         patch = yamlencode([
           { op = "replace", path = "/spec/traffic/jwtAuthentication/providers/0/issuer", value = var.entra_issuer },
           { op = "replace", path = "/spec/traffic/jwtAuthentication/providers/0/audiences", value = [coalesce(var.gateway_api_audience, "REPLACE-ME")] },
           { op = "replace", path = "/spec/traffic/jwtAuthentication/providers/0/jwks/remote/url", value = var.entra_jwks_uri },
         ])
-      },
+      }
     ],
     # With NeMo on, guardrails/ owns the `garde-fous-llm` policy (regex + webhook).
     var.enable_nemo_guardrails ? [{

@@ -22,7 +22,7 @@ client ─► agentgateway ──(1) native regex guard ──(2) webhook ─►
 | Layer | Where | What | Cost |
 |---|---|---|---|
 | 1 | `AgentgatewayPolicy` `regex` | card numbers | µs, no dependency |
-| 2 | `AgentgatewayPolicy` `webhook` → adapter → NeMo | secrets, IBAN, NIR, YARA injection (code, SQLi, XSS, template), LLM self-checks | < 10 ms without LLM rails |
+| 2 | `AgentgatewayPolicy` `webhook` → adapter (`app/dlp.py`: card numbers with Luhn, secrets in `tool` messages) → NeMo | secrets, IBAN, NIR, YARA injection (code, SQLi, XSS, template), LLM self-checks | < 10 ms without LLM rails |
 
 ## Layout
 
@@ -30,7 +30,7 @@ client ─► agentgateway ──(1) native regex guard ──(2) webhook ─►
 adapter/                  FastAPI service implementing the agentgateway webhook contract
   app/                    HTTP layer, NeMo backends (library | microservice), settings
   contract/               vendored webhook OpenAPI spec (responses are validated against it in tests)
-  tests/                  20 behaviour + contract tests (mock OpenAI server for LLM rails)
+  tests/                  behaviour + contract tests (mock OpenAI server for LLM rails)
 deploy/                   kustomize base — library mode, Apache-2.0 only
   rails/default           deterministic rails: regex + YARA injection, no LLM call
   rails/strict            default + `self check input/output` through the internal gateway
@@ -124,6 +124,13 @@ Consequences for this platform:
 
 - Streaming: agentgateway calls `/response` per buffered chunk; masking in streaming mode is not applied by the gateway's native guards (use Reject).
 - NetworkPolicies assume proxy pods carry the `gateway.networking.k8s.io/gateway-name` label.
-- Microservice mode: the `status` values of a blocked check and the ConfigMap layout expected by `configStore.configMap` are not documented; the mapping is defensive.
+- Microservice mode: the `status` values of a blocked check and the ConfigMap layout expected by `configStore.configMap` are not documented; the mapping is defensive. Only `success`/`passed` pass and `blocked`/`failure`/`failed`/`error` block: a rail reported as `skipped`, or a missing `status`, is treated as an engine failure — with `FAIL_MODE=closed` **every** request is refused, with an explicit `microservice guardrail status skipped|missing|unknown … FAIL_MODE applies` error in the adapter logs. VÉRIFIER (D-7) sur une instance réelle : which statuses the microservice actually returns (does it emit `skipped` for rails not applicable to the direction?).
 - The workload identity of the deployer-created proxy pods (for `auth.azure.workloadIdentity`) must be bound to the `agentgateway` managed identity.
-- `llm-assistant-groupe` in `guardrail-policies.yaml` is an example route for the strict profile.
+- `llm-assistant-groupe` in `guardrail-policies.yaml` is an **inert example**: no HTTPRoute of that name exists in this repo, so the `guardrails-strict` policy attaches to nothing and no route uses the strict profile today. To move an existing route to strict, switch its `x-guardrail-profile` in `garde-fous-llm` (do not target it from both policies). Whether the LLM self-check fits in the 3 s webhook timeout under load: VÉRIFIER (D-7).
+- Regexes are a first line of defence, not a DLP: case-insensitive and tolerant of space / dot / dash separators, they still miss encoded, split or paraphrased data. Text is normalised before matching (NFKC — fullwidth digits, exotic spaces — and zero-width characters U+200B-U+200D, U+2060, U+FEFF, U+00AD removed). Request bodies above `MAX_BODY_BYTES` (default 1 MiB) get a 413 before parsing.
+- Card numbers are no longer a YAML regex (it blocked version lists, IPs, dates, French phone numbers, SIRETs, ms timestamps). The adapter (`app/dlp.py`) checks the newest `user` message: digit groups split by any run of space / `.` / `_` / `/` / `-` (zero-width characters count as separators), a card grouping (4-4-4-4, 4-6-5, 4-6-4, 4-4-4-4-3, or no separator), a plausible issuer prefix/length, and a valid Luhn key. Not caught: cards written with other groupings (e.g. pairs of digits, the shape of a phone number) or spelled out. A contiguous 14-digit SIRET starting with 30/36/38/39 can still be taken for a Diners card. The native agentgateway `CreditCard` builtin (layer 1) runs on the whole request, `tool` messages included: whether it checks Luhn and how it reacts to the false positives above, VÉRIFIER (D-7).
+- The French NIR now requires its 2-digit key (15 digits): without it a 13-digit ms timestamp had the exact shape of a NIR.
+- The `secret: value` rule only fires when the value has 8+ characters, contains a digit or one of `@ # % ^ & + = / \ | ~ _`, and does not start like a reference or mask (`$VAR`, `%VAR%`, `<…>`, `{…}`, `[…]`, `****`): `mot de passe: introuvable` passes, `secret = Azerty12` is blocked. A letters-only password (`password: motdepassesimple`) is no longer caught.
+- On `/request`, the newest `user` message is checked with its conversation by the profile's input rails. Every later non-`assistant` message (`tool` results from MCP servers — Azure, Microsoft Learn — in demo D) is handled according to `TOOL_RAILS`:
+  - `secrets` (default): only the 5 secret patterns, in Python in the adapter (exact copy of the YAML ones, a test enforces it). No personal-data patterns — versions, IPs, dates in tool output are not user PII — and **no LLM self-check**: on the strict profile, one self-check per tool result under the 3 s gateway timeout with `FailClosed` meant systematic refusals as soon as a turn had several tool results. Trade-off: an indirect prompt injection carried by a tool result is no longer screened on input; it is only seen indirectly, on output (YARA `injection detection`, strict `self check output`).
+  - `profile`: the secret patterns, then the full input rails of the profile on each tool message (personal data and LLM self-check included, so indirect injection is screened). All engine checks of a request run concurrently (`asyncio.gather`): latency is the slowest check, not the sum. Engine errors follow `FAIL_MODE`.

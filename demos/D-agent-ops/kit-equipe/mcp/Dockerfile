@@ -1,3 +1,4 @@
+# VÉRIFIER : épingler par digest (FROM python:3.12-slim@sha256:…), comme le modèle d'équipe.
 FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .

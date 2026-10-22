@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# Services des namespaces d'équipe (label agentic.io/team), pour TOUS les
+# auteurs : pipeline de l'équipe, agentregistry, kagent, administrateur.
+# Un Service d'équipe sélectionne SES pods, en ClusterIP, rien d'autre :
+#   - ExternalName ou un Service sans sélecteur ferait relayer par la passerelle
+#     (backend mcp-equipes, découverte par label) un service de la plateforme
+#     — Azure MCP, modèle KAITO, contrôleur kagent — en contournant leurs
+#     NetworkPolicies, puisque la passerelle y est autorisée ;
+#   - LoadBalancer ou NodePort publierait un serveur MCP sans authentification
+#     hors du cluster ; externalIPs détournerait le trafic d'une adresse ;
+#   - le nom de cible MCP (annotation agentgateway.dev/mcp-target-name) préfixe
+#     les outils sur /mcp-equipes et le label server= du tableau de bord : il
+#     vaut <équipe> ou commence par <équipe>-- ; le double tiret est interdit
+#     dans les noms d'équipe, donc « abc » ne peut pas prendre une cible de
+#     « abc-def ». Sinon une équipe publierait des outils sous le nom d'une autre.
+# ---------------------------------------------------------------------------
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: equipes-services
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - { key: agentic.io/team, operator: Exists }
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["services"]
+  validations:
+    - expression: "!has(object.spec.type) || object.spec.type == 'ClusterIP'"
+      message: "Service d'équipe : ClusterIP seulement (ni ExternalName, ni LoadBalancer, ni NodePort)"
+    - expression: "has(object.spec.selector) && size(object.spec.selector) > 0"
+      message: "Service d'équipe : un sélecteur de pods est obligatoire"
+    - expression: "!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0"
+      message: "Service d'équipe : externalIPs interdit"
+    - expression: >-
+        !has(object.metadata.annotations) ||
+        !('agentgateway.dev/mcp-target-name' in object.metadata.annotations) ||
+        object.metadata.annotations['agentgateway.dev/mcp-target-name'] == request.namespace ||
+        object.metadata.annotations['agentgateway.dev/mcp-target-name'].startsWith(request.namespace + '--')
+      message: "Service d'équipe : agentgateway.dev/mcp-target-name vaut <équipe> ou commence par <équipe>-- (le double tiret est interdit dans les noms d'équipe : pas d'usurpation entre « abc » et « abc-def »)"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: equipes-services
+spec:
+  policyName: equipes-services
+  validationActions: [Deny]

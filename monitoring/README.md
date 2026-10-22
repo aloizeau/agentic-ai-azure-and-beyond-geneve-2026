@@ -29,7 +29,7 @@ Open it: `kubectl -n monitoring port-forward svc/kps-grafana 3000:80` → <http:
 |---|---|
 | `metrics.yaml` | `AgentgatewayPolicy` *metriques-usage* on both Gateways: adds `user` (Entra ID `preferred_username`, or `agent:<team>` for a virtual key), `team` (virtual key metadata, `collaborateurs` for people) and `agent` (the kagent agent named in an `invoke_agent` call) to every metric |
 | `model-costs.json` | price list, mounted as ConfigMap `model-costs` and referenced by both `AgentgatewayParameters` (`spec.modelCatalog`): each response adds its cost to `agentgateway_gen_ai_client_cost_usd_total` |
-| `backend-mcp.yaml`, `routes.yaml` | MCP through the gateway: LibreChat calls `/mcp` with the user's Entra ID token (policy `acces-llm`), the gateway forwards to the kagent MCP server and counts every tool call |
+| `backend-mcp.yaml`, `routes.yaml` | MCP through the gateway: LibreChat calls `/mcp` with the user's Entra ID token (policy `acces-outils`), the gateway forwards to the kagent MCP server and counts every tool call |
 
 ## Prices
 

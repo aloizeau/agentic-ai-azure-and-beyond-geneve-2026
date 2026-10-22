@@ -12,8 +12,12 @@ Two Kubernetes objects, applied live: an `HTTPRoute` and an `AgentgatewayPolicy`
 
 ```powershell
 ./demos/A-ratelimit-entra/run.ps1     # $env:NO_PAUSE = "1" for rehearsals
-./demos/A-ratelimit-entra/reset.ps1
+./demos/A-ratelimit-entra/reset.ps1   # backup only
 ```
+
+`/demo/v1` bypasses the platform guardrails (`garde-fous-llm`): `run.ps1` deletes every demo A
+object (label `app.kubernetes.io/part-of=demo-a`) in its `finally`, on a normal end, an error or
+Ctrl+C, and warns if `kubectl delete` fails (exit code checked) — then run `reset.ps1`.
 
 The issuer, audience and JWKS URL are copied at run time from the platform policy
 `acces-llm` (same tenant, same API app); the token comes from

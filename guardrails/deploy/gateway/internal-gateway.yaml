@@ -57,3 +57,20 @@ spec:
         - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: llm-guardrails-internal
+---
+# Plafond de la porte non filtrée : sans lui, un moteur qui boucle (ou un
+# prompt qui force des auto-vérifications en chaîne) consomme sans limite.
+# Même ordre de grandeur que acces-llm (gateway/deploy/policies.yaml).
+# Pas d'authentification ici : seule la NetworkPolicy (adaptateur seul) filtre.
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: plafond-garde-fous-interne
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: llm-guardrails-internal }
+  traffic:
+    rateLimit:
+      local:
+        - tokens: 50000                       # jetons LLM par minute (route, réplica du proxy)
+          unit: Minutes

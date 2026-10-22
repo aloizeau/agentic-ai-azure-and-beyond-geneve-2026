@@ -1,0 +1,171 @@
+# Workflow réutilisable de l'équipe IA — « 2 · Déploiement » des dépôts agent-<équipe>.
+# docs/ → stockage de l'équipe ; deploy/ (kustomize) et agent/ → SON namespace.
+# Le dépôt de l'équipe l'appelle en dix lignes
+# (terraform/teams/template/.github/workflows/2-deploiement.yml).
+#
+# Identité : id-<équipe>-pipeline, fédérée avec repo:<owner>/agent-<équipe>:ref:refs/heads/main
+# :job_workflow_ref:<ce dépôt>/.github/workflows/agent-deploy.yml@refs/heads/main.
+# Droits : Storage Blob Data Contributor sur SON stockage, AKS Cluster User, et dans
+# Kubernetes agentic-team-deployer dans SON namespace (ni Secrets, ni RBAC, ni
+# NetworkPolicies). Pas d'« environment » ici : il remplacerait « ref » dans le sujet OIDC.
+#
+# Entrées : les variables du dépôt de l'équipe (posées par Agent Ready), passées
+# par le pipeline appelant.
+name: agent-deploy
+
+on:
+  workflow_call:
+    inputs:
+      equipe: { description: "Nom de l'équipe (namespace)", required: true, type: string }
+      acr-name: { description: "Registre de la plateforme", required: true, type: string }
+      azure-client-id: { description: "Client ID d'id-<équipe>-pipeline", required: true, type: string }
+      azure-tenant-id: { description: "Tenant Entra ID", required: true, type: string }
+      azure-subscription-id: { description: "Abonnement", required: true, type: string }
+      storage-account: { description: "Stockage des documents de l'équipe", required: true, type: string }
+      aks-name: { description: "Cluster AKS", required: true, type: string }
+      aks-resource-group: { description: "Groupe de ressources du cluster", required: true, type: string }
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: documents → stockage · kubectl apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EQUIPE: ${{ inputs.equipe }}
+      ACR_NAME: ${{ inputs.acr-name }}
+      STORAGE_ACCOUNT: ${{ inputs.storage-account }}
+      AKS_NAME: ${{ inputs.aks-name }}
+      AKS_RESOURCE_GROUP: ${{ inputs.aks-resource-group }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # tag de l'image : SHA du dernier commit qui touche mcp/
+          persist-credentials: false
+
+      - name: Connexion Azure (OIDC, aucun secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ inputs.azure-client-id }}
+          tenant-id: ${{ inputs.azure-tenant-id }}
+          subscription-id: ${{ inputs.azure-subscription-id }}
+
+      - name: Documents → stockage (Entra ID, aucune clé)
+        # Le serveur MCP relit le conteneur toutes les 60 s : pas de redémarrage.
+        run: |
+          for i in $(seq 1 12); do
+            if az storage blob upload-batch --auth-mode login --account-name "$STORAGE_ACCOUNT" \
+                 -d documents -s docs --pattern "*.md" --overwrite --only-show-errors -o none; then
+              break
+            fi
+            if [ "$i" -eq 12 ]; then echo "::error::écriture refusée sur $STORAGE_ACCOUNT"; exit 1; fi
+            echo "stockage pas encore accessible ($i/12), nouvel essai dans 20 s"
+            sleep 20
+          done
+          # Les documents retirés du dépôt sont retirés du stockage.
+          (cd docs && find . -type f -name '*.md' | sed 's#^\./##' | sort) > "$RUNNER_TEMP/depot.txt"
+          az storage blob list --auth-mode login --account-name "$STORAGE_ACCOUNT" -c documents \
+            --query "[].name" -o tsv --only-show-errors | sort > "$RUNNER_TEMP/stockage.txt"
+          comm -13 "$RUNNER_TEMP/depot.txt" "$RUNNER_TEMP/stockage.txt" | while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            az storage blob delete --auth-mode login --account-name "$STORAGE_ACCOUNT" -c documents -n "$name" --only-show-errors -o none
+            echo "retiré : $name"
+          done
+          echo "documents : $(wc -l < "$RUNNER_TEMP/depot.txt")"
+
+      - name: kubectl et kubelogin
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          az aks install-cli --install-location "$HOME/.local/bin/kubectl" \
+            --kubelogin-install-location "$HOME/.local/bin/kubelogin" --only-show-errors
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Accès au cluster (Entra ID)
+        run: |
+          az aks get-credentials -g "$AKS_RESOURCE_GROUP" -n "$AKS_NAME" --overwrite-existing --only-show-errors
+          kubelogin convert-kubeconfig -l azurecli
+          # Le sujet Kubernetes de l'identité (object ID), celui du RoleBinding
+          # deployeur-github. Réessais : propagation des rôles au premier run.
+          for i in $(seq 1 12); do
+            if kubectl auth whoami && kubectl -n "$EQUIPE" get deployments >/dev/null; then exit 0; fi
+            echo "droits pas encore actifs ($i/12), nouvel essai dans 20 s"
+            sleep 20
+          done
+          echo "::error::accès refusé au namespace $EQUIPE"
+          exit 1
+
+      - name: Image à déployer
+        id: image
+        run: |
+          tag=$(git log -1 --format=%H -- mcp/)
+          image="$ACR_NAME.azurecr.io/$EQUIPE/docs-mcp"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image : $image:$tag (dernier commit de mcp/)"
+          # L'image existe-t-elle ? (API du registre, droit pull d'AcrPush.) Un push
+          # qui touche mcp/ ET docs/ lance ce pipeline avant la fin de « 1 · Image » :
+          # les documents sont à jour, Kubernetes attend le déploiement suivant.
+          registry="$ACR_NAME.azurecr.io"
+          aad=$(az account get-access-token --query accessToken -o tsv)
+          refresh=$(curl -sS -X POST "https://$registry/oauth2/exchange" \
+            --data-urlencode grant_type=access_token --data-urlencode "service=$registry" \
+            --data-urlencode "tenant=${{ inputs.azure-tenant-id }}" --data-urlencode "access_token=$aad" | jq -r '.refresh_token // empty')
+          access=$(curl -sS -X POST "https://$registry/oauth2/token" \
+            --data-urlencode grant_type=refresh_token --data-urlencode "service=$registry" \
+            --data-urlencode "scope=repository:$EQUIPE/docs-mcp:pull" --data-urlencode "refresh_token=$refresh" | jq -r '.access_token // empty')
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -I -H "Authorization: Bearer $access" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://$registry/v2/$EQUIPE/docs-mcp/manifests/$tag")
+          if [ "$code" = "200" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::image $tag pas encore construite (HTTP $code) : documents à jour, déploiement après « 1 · Image »"
+          else
+            echo "::error::image $image:$tag absente du registre (HTTP $code) : lancer « 1 · Image »"
+            exit 1
+          fi
+
+      - name: kubectl apply (namespace ${{ inputs.equipe }})
+        if: steps.image.outputs.present == 'true'
+        # Surcouche kustomize générée : le tag de l'image remplace « latest » du
+        # gabarit, sans modifier deploy/ (les ajouts de l'équipe y restent).
+        run: |
+          overlay="$GITHUB_WORKSPACE/.deploiement"
+          mkdir -p "$overlay"
+          printf '%s\n' \
+            "apiVersion: kustomize.config.k8s.io/v1beta1" \
+            "kind: Kustomization" \
+            "resources:" \
+            "  - ../deploy" \
+            "images:" \
+            "  - name: ${{ steps.image.outputs.image }}" \
+            "    newTag: \"${{ steps.image.outputs.tag }}\"" > "$overlay/kustomization.yaml"
+          kubectl kustomize "$overlay" > "$RUNNER_TEMP/deploy.yaml"
+          if grep -q "docs-mcp:latest" "$RUNNER_TEMP/deploy.yaml"; then
+            echo "::error::image encore en « latest » : deploy/kustomization.yaml ne référence plus $ACR_NAME.azurecr.io/$EQUIPE/docs-mcp"
+            exit 1
+          fi
+          kubectl apply -n "$EQUIPE" -f "$RUNNER_TEMP/deploy.yaml"
+          if [ -d agent ]; then kubectl apply -n "$EQUIPE" -f agent/; fi
+
+      - name: Déploiement prêt
+        if: steps.image.outputs.present == 'true'
+        run: |
+          if ! kubectl -n "$EQUIPE" rollout status deployment/docs-mcp --timeout=180s; then
+            kubectl -n "$EQUIPE" get pods -o wide
+            kubectl -n "$EQUIPE" get events --sort-by=.lastTimestamp | tail -20
+            echo "::error::docs-mcp n'est pas prêt (image $ACR_NAME.azurecr.io/$EQUIPE/docs-mcp:${{ steps.image.outputs.tag }} construite ? lancer « 1 · Image »)"
+            exit 1
+          fi
+          kubectl -n "$EQUIPE" get deploy,svc,remotemcpserver,agent
+          {
+            echo "### Déployé dans \`$EQUIPE\`"
+            echo
+            echo "- image : \`$ACR_NAME.azurecr.io/$EQUIPE/docs-mcp:${{ steps.image.outputs.tag }}\`"
+            echo "- documents : $(wc -l < "$RUNNER_TEMP/depot.txt") dans \`$STORAGE_ACCOUNT/documents\`"
+          } >> "$GITHUB_STEP_SUMMARY"

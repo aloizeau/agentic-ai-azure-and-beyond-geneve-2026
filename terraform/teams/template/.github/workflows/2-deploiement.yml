@@ -1,0 +1,31 @@
+# Pipeline fourni par l'équipe IA (Agent Ready) : ne pas le modifier ici.
+# Après « 1 · Image », ou sur un push qui touche agent/, deploy/ ou docs/.
+name: 2 · Déploiement
+on:
+  workflow_run:
+    workflows: ["1 · Image"]
+    types: [completed]
+    branches: [main]
+  push:
+    branches: [main]
+    paths: ["agent/**", "deploy/**", "docs/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: deploiement
+  cancel-in-progress: false
+jobs:
+  deploiement:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    uses: __PLATFORM_REPO__/.github/workflows/agent-deploy.yml@__PLATFORM_REF__
+    with:
+      equipe: ${{ vars.EQUIPE }}
+      acr-name: ${{ vars.ACR_NAME }}
+      azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+      azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+      azure-subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      storage-account: ${{ vars.STORAGE_ACCOUNT }}
+      aks-name: ${{ vars.AKS_NAME }}
+      aks-resource-group: ${{ vars.AKS_RESOURCE_GROUP }}

@@ -4,7 +4,7 @@
 # Self-hosted servers (Grafana, Azure, Microsoft Graph) applied from
 # tools/enterprise/deploy: pods in `outils-entreprise`, one AgentgatewayBackend
 # + HTTPRoute each in agentgateway-system (/mcp-grafana, /mcp-azure, /mcp-graph),
-# covered by the acces-llm policy. Their credentials are created out of band by
+# covered by the acces-outils policy. Their credentials are created out of band by
 # tools/enterprise/run.sh (Secrets, never committed) — pods stay Pending until
 # then. GitHub (per-user OAuth) and Microsoft Learn (no auth) are direct
 # LibreChat MCP servers (see librechat.tf), no pod here.
@@ -28,13 +28,18 @@ resource "terraform_data" "enterprise_tools" {
     command = "kubectl apply -k ../tools/enterprise/deploy"
   }
 
-  # Turning the flag off removes pods, backends and routes. Destroy-time
-  # provisioners take a literal command (no locals); cwd is the terraform root.
+  # Turning the flag off removes pods, backends and routes — but NOT the
+  # namespace outils-entreprise: it is shared (démo D deploys azure-mcp in it),
+  # and deleting it would take démo D's objects and Secrets with it. Hence the
+  # files one by one, namespace.yaml left out (`delete -k` would delete it).
+  # Keep this list in step with tools/enterprise/deploy/kustomization.yaml.
+  # Destroy-time provisioners take a literal command (no locals); cwd is the
+  # terraform root.
   provisioner "local-exec" {
     when       = destroy
     on_failure = continue
-    command    = "kubectl delete -k ../tools/enterprise/deploy --ignore-not-found --wait=false"
+    command    = "kubectl delete -f ../tools/enterprise/deploy/gateway.yaml -f ../tools/enterprise/deploy/network-policies.yaml -f ../tools/enterprise/deploy/workloads.yaml --ignore-not-found --wait=false"
   }
 
-  depends_on = [terraform_data.gateway_core] # Gateway agentgateway-proxy (parentRef) + acces-llm
+  depends_on = [terraform_data.gateway_core] # Gateway agentgateway-proxy (parentRef) + acces-outils
 }

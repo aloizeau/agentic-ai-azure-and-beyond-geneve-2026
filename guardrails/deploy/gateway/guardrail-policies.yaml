@@ -54,6 +54,15 @@ spec:
 ---
 # A stricter profile for a route exposed to broader audiences (e.g. the
 # company-wide assistant): same adapter, "strict" rails incl. LLM self-checks.
+#
+# ⚠️ EXEMPLE INERTE : aucune HTTPRoute `llm-assistant-groupe` n'existe dans ce
+# dépôt (routes LLM réelles : llm, llm-agents, llm-aks*, llm-*-public). Tant
+# qu'elle n'est pas créée, cette policy ne s'attache à rien et AUCUNE route ne
+# passe par le profil strict. Pour passer une route existante en strict, ne
+# pas l'ajouter ici (elle serait aussi ciblée par garde-fous-llm) : la retirer
+# de garde-fous-llm ou y changer `x-guardrail-profile` en '"strict"'.
+# Penser alors au timeout de 3 s ci-dessous : le self check LLM y tient-il
+# sous charge ? VÉRIFIER (D-7).
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:

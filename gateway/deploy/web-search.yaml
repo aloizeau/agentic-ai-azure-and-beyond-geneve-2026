@@ -34,7 +34,11 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: mcp
-          image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim   # à épingler sur un digest
+          # VÉRIFIER (D-7) : tag mobile (suit chaque version d'uv). Version exacte
+          # non résolue ici (ghcr.io injoignable depuis l'environnement de revue) :
+          # passer à ghcr.io/astral-sh/uv:<X.Y.Z>-python3.13-bookworm-slim puis
+          # à un digest. Le paquet MCP, lui, est déjà épinglé (==0.7.0).
+          image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
           command: ["uvx"]
           args:
             - "--from"
@@ -96,7 +100,8 @@ spec:
 ---
 # Ingress : seuls les pods de la gateway atteignent le serveur MCP.
 # Egress : DNS + Internet (443/80) uniquement — jamais le réseau interne du
-# cluster (défense SSRF, cohérente avec le discours "garde-fous").
+# cluster ni les adresses spéciales Azure (défense SSRF, cohérente avec le
+# discours "garde-fous").
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -125,7 +130,11 @@ spec:
               - 10.0.0.0/8
               - 172.16.0.0/12
               - 192.168.0.0/16
-              - 169.254.0.0/16
+              - 169.254.0.0/16             # IMDS : jeton de l'identité kubelet
+              - 168.63.129.16/32           # wireserver / DNS Azure (IP publique)
+              - 100.64.0.0/10              # CGNAT : overlays et services internes
       ports:
         - { protocol: TCP, port: 443 }
+        # 80 conservé : fetch_content doit pouvoir lire une page http:// (c'est
+        # sa fonction). Les exceptions ci-dessus valent aussi pour ce port.
         - { protocol: TCP, port: 80 }
