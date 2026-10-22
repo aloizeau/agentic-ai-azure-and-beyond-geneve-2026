@@ -238,16 +238,34 @@ locals {
 
   # replace() : sous Windows, git (core.autocrlf) extrait les fichiers en CRLF ;
   # sans normalisation, « \n---\n » ne coupe rien et yamldecode reçoit tout le fichier.
+  #
+  # Rendu avec un marqueur à la place de l'object ID de l'équipe IA : au premier
+  # apply, l'identité est créée dans le même run et son ID n'est connu qu'après.
+  # Les clés du for_each (kind/nom) restent ainsi connues au plan ; le vrai ID
+  # remplace le marqueur dans les seules expressions CEL qui l'utilisent.
+  principal_marker = "__AI_TEAM_PRINCIPAL_ID__"
   admission_docs = concat(
-    var.ai_team_enabled ? [
+    [
       for d in split("\n---\n", replace(templatefile("${path.module}/manifests/agent-ready-admission.yaml.tftpl", {
-        principal_id  = var.ai_team_principal_id
+        principal_id  = local.principal_marker
         noms_reserves = jsonencode(local.noms_reserves)
-      }), "\r\n", "\n")) : yamldecode(d)
-    ] : [],
+      }), "\r\n", "\n")) : yamldecode(d) if var.ai_team_enabled
+    ],
     [for d in split("\n---\n", replace(file("${path.module}/manifests/equipes-admission.yaml"), "\r\n", "\n")) : yamldecode(d)],
   )
-  admission = { for d in local.admission_docs : "${d.kind}/${d.metadata.name}" => d }
+  admission = {
+    for d in local.admission_docs : "${d.kind}/${d.metadata.name}" => (
+      d.kind != "ValidatingAdmissionPolicy" ? d : merge(d, {
+        spec = merge(d.spec, {
+          for f in ["matchConditions", "variables", "validations"] : f => [
+            for e in d.spec[f] : merge(e, {
+              expression = replace(e.expression, local.principal_marker, coalesce(var.ai_team_principal_id, local.principal_marker))
+            })
+          ] if can(d.spec[f])
+        })
+      })
+    )
+  }
 }
 
 resource "kubernetes_manifest" "admission" {

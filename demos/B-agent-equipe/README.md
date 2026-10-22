@@ -26,7 +26,7 @@ Agent Ready (workflow_dispatch)                      1 · Image        (push mcp
 
 ```powershell
 # Once: terraform.tfvars → ai_team_github_repository = "<owner>/<this repo>", ./scripts/deploy.ps1, then
-$env:AI_TEAM_GITHUB_TOKEN = "<fine-grained token>"; ./demos/B-agent-equipe/prepare.ps1
+./demos/B-agent-equipe/prepare.ps1   # gh session token; or $env:AI_TEAM_GITHUB_TOKEN = "<fine-grained token>" first
 ./demos/B-agent-equipe/run.ps1                  # -Equipe equipe-docs
 ./demos/B-agent-equipe/reset.ps1                # destroy through the pipeline; -Local from this workstation
 ```
@@ -48,7 +48,9 @@ gets no Azure token.
 
 ## Prerequisites and limits
 
-- A fine-grained GitHub token for the AI team (Administration, Contents, Workflows,
+- By default `prepare.ps1` stores the token of your `gh` session (scopes `repo`, `workflow`,
+  `delete_repo`, requested if missing): simple for a demo, but valid on all your repositories.
+  Otherwise, a fine-grained GitHub token for the AI team (Administration, Contents, Workflows,
   Variables **and Actions** — read and write, all repositories of the owner), stored as an
   environment secret. Actions is what sets the team repository's OIDC subject
   (`PUT /repos/<owner>/<repo>/actions/oidc/customization/sub`): without it, Agent Ready
