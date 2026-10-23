@@ -63,8 +63,8 @@ et repris en fin de document.
 - **Images non épinglées par digest** (`latest` ou tags mobiles) : aucun digest n'est inventé ;
   à épingler à la répétition (`VÉRIFIER (D-7)`).
 - **Outils d'entreprise** : identité partagée (principal de service Azure, Graph en app-only).
-- **Liste blanche par suffixe** sur `/mcp-equipes` : protège des erreurs, pas d'une équipe
-  malveillante qui nommerait un outil d'écriture `x_rechercher`.
+- **Liste blanche par nom d'outil** sur `/mcp-equipes` (toutes cibles d'équipes) : protège des
+  erreurs, pas d'une équipe malveillante qui nommerait un outil d'écriture `rechercher`.
 - **Clés virtuelles** : le Role du provisioner lit tous les Secrets d'`agentgateway-system`
   (noms `vk-*` inconnus d'avance).
 - **Garde-fous** : un mot de passe fait uniquement de lettres n'est plus détecté (compromis

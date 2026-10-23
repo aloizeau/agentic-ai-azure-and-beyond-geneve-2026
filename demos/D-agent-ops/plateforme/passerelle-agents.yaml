@@ -83,7 +83,11 @@ spec:
     mcp:
       authorization:
         action: Allow
+        # agentgateway v1.5 (vérifié sur le cluster) : mcp.tool.target est la cible
+        # (azure, learn) et mcp.tool.name le nom SANS préfixe — les clients voient
+        # learn_microsoft_docs_search, la règle voit target « learn » et
+        # name « microsoft_docs_search ».
         policy:
           matchExpressions:
-            - 'mcp.tool.name in ["learn_microsoft_docs_search", "learn_microsoft_docs_fetch"]'
-            - 'mcp.tool.name.startsWith("azure_") && apiKey.team in __EQUIPES_AZURE__'   # VÉRIFIER : apiKey dans ce contexte
+            - 'mcp.tool.target == "learn" && mcp.tool.name in ["microsoft_docs_search", "microsoft_docs_fetch"]'
+            - 'mcp.tool.target == "azure" && apiKey.team in __EQUIPES_AZURE__'   # VÉRIFIER : apiKey dans ce contexte

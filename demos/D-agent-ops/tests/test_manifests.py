@@ -153,7 +153,13 @@ def test_passerelle_coherente():
     # lecture : creer_ticket et commenter_ticket restent des gestes de l'agent, approuvés.
     autorisations = {p["metadata"]["name"]: p for p in docs(REPO / "gateway" / "deploy" / "autorisations-mcp.yaml")}
     regles = " ".join(autorisations["outils-equipes-autorises"]["spec"]["backend"]["mcp"]["authorization"]["policy"]["matchExpressions"])
-    assert "_lister_tickets" in regles and "_creer_ticket" not in regles and "_commenter_ticket" not in regles
+    # agentgateway v1.5 : la règle voit le nom SANS préfixe de cible (lister_tickets).
+    assert '"lister_tickets"' in regles and "creer_ticket" not in regles and "commenter_ticket" not in regles
+    # /agents/mcp-entreprise : outils distingués par cible (mcp.tool.target), pas par préfixe.
+    entreprise = " ".join(pols["outils-entreprise-autorises"]["spec"]["backend"]["mcp"]["authorization"]["policy"]["matchExpressions"])
+    assert 'mcp.tool.target == "learn"' in entreprise and 'mcp.tool.target == "azure"' in entreprise
+    assert "learn_" not in entreprise and "azure_" not in entreprise
+    assert "microsoft_code_sample_search" not in entreprise
 
 
 def test_azure_mcp_lecture_seule_et_isole():

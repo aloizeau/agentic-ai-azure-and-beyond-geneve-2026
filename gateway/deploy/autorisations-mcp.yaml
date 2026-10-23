@@ -55,16 +55,16 @@ spec:
               mcp.tool.arguments.agent in ["equipe-docs/assistant-docs"])
 ---
 # /mcp-equipes — outils publiés par les équipes, préfixés par la cible
-# (prefixMode Always : <cible>_rechercher ; la cible, annotation
+# (prefixMode Always : <cible>_rechercher côté LibreChat ; la cible, annotation
 # agentgateway.dev/mcp-target-name, commence par le namespace de l'équipe —
-# règle d'admission Agent Ready). Seul le SUFFIXE compte ici, la cible n'est
-# donc pas supposée. LECTURE SEULE pour les
+# règle d'admission Agent Ready). Seul le nom de l'outil compte ici (toutes
+# les cibles d'équipes). LECTURE SEULE pour les
 # personnes : créer ou commenter un ticket (ou tout outil d'écriture qu'une
 # équipe ajouterait) reste un geste de l'agent, avec approbation humaine dans
 # kagent — jamais un bouton ouvert à tout le tenant.
-# Les suffixes protègent contre l'ERREUR, pas contre la malveillance : le nom
+# La liste de noms protège contre l'ERREUR, pas contre la malveillance : le nom
 # d'un outil est choisi par l'équipe dans son serveur. Une équipe qui nomme un
-# outil d'écriture « x_rechercher » le verra ouvert (risque accepté et
+# outil d'écriture « rechercher » le verra ouvert (risque accepté et
 # documenté ; la revue du dépôt d'équipe et l'admission — nom de cible préfixé
 # par le namespace — bornent l'impact à SES propres données).
 apiVersion: agentgateway.dev/v1alpha1
@@ -79,8 +79,8 @@ spec:
       authorization:
         action: Allow
         policy:
+          # agentgateway v1.5 (vérifié sur le cluster) : mcp.tool.name est le nom
+          # de l'outil SANS le préfixe de la cible (rechercher, pas
+          # equipe-docs--docs_rechercher) ; la cible est dans mcp.tool.target.
           matchExpressions:
-            - 'mcp.tool.name.endsWith("_lister_documents")'
-            - 'mcp.tool.name.endsWith("_lire_document")'
-            - 'mcp.tool.name.endsWith("_rechercher")'
-            - 'mcp.tool.name.endsWith("_lister_tickets")'
+            - 'mcp.tool.name in ["lister_documents", "lire_document", "rechercher", "lister_tickets"]'
