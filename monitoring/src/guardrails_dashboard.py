@@ -27,6 +27,7 @@ OUT = pathlib.Path(__file__).resolve().parents[1] / "dashboards" / "garde-fous.j
 # Terraform remplace __LOG_ANALYTICS_WORKSPACE_ID__ par l'identifiant du workspace.
 AZ = {"type": "grafana-azure-monitor-datasource", "uid": "azure-loganalytics"}
 WORKSPACE = "__LOG_ANALYTICS_WORKSPACE_ID__"
+# Colonnes accentuées : KQL les veut entre ['…'] (un identifiant nu accentué est une erreur de syntaxe).
 BLOCKED_KQL = "\n".join([
     "ContainerLogV2",
     '| where PodNamespace == "agentgateway-system" and PodName startswith "guardrail-adapter"',
@@ -36,10 +37,10 @@ BLOCKED_KQL = "\n".join([
     '| where tostring(m.team) matches regex "^${equipe:regex}$" and tostring(m.profile) matches regex "^${profil:regex}$"',
     '    and tostring(m.source) matches regex "^${source:regex}$" and tostring(m.direction) matches regex "^${direction:regex}$"',
     '    and tostring(m.rail) matches regex "^${regle:regex}$"',
-    "| project Heure = TimeGenerated, Décision = tostring(m.decision), Sens = tostring(m.direction),",
-    "    Mécanisme = tostring(m.source), Règle = tostring(m.rail), Équipe = tostring(m.team),",
-    "    Utilisateur = tostring(m.user), Profil = tostring(m.profile), Modèle = tostring(m.model),",
-    '    Concerné = iff(isempty(tostring(m.where)), "message utilisateur", tostring(m.where)),',
+    "| project Heure = TimeGenerated, ['Décision'] = tostring(m.decision), Sens = tostring(m.direction),",
+    "    ['Mécanisme'] = tostring(m.source), ['Règle'] = tostring(m.rail), ['Équipe'] = tostring(m.team),",
+    "    Utilisateur = tostring(m.user), Profil = tostring(m.profile), ['Modèle'] = tostring(m.model),",
+    "    ['Concerné'] = iff(isempty(tostring(m.where)), \"message utilisateur\", tostring(m.where)),",
     "    Message = tostring(m.preview)",
     "| order by Heure desc",
     "| take 200",
