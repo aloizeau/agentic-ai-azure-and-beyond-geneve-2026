@@ -8,7 +8,6 @@ both Gateways (internal and public) by kube-prometheus-stack:
   agentgateway_gen_ai_client_cost_usd_total  counter, USD (model price list)
   agentgateway_mcp_requests_total            counter, MCP calls (method, server, resource = tool)
   agentgateway_requests_total                counter, HTTP (status, route)
-  agentgateway_guardrail_checks_total        counter, guardrails (phase, action)
   agentgateway_cost_catalog_lookups_total    counter, price lookups (status)
 The labels user / team / agent are added by gateway/deploy/metrics.yaml.
 """
@@ -273,21 +272,18 @@ def build():
     y += 7
 
     # ------------------------------------------------------- access and guardrails
-    p.append(row("Accès et garde-fous", y)); y += 1
+    p.append(row("Accès et plafonds (garde-fous : tableau de bord « Garde-fous »)", y)); y += 1
     g = 'gateway=~"$porte"'
     p += [
-        stat("Refus d'authentification (401)", 0, y, 4,
+        stat("Refus d'authentification (401)", 0, y, 8,
              f'sum(increase({REQ}{{status="401", {LLM_MCP_ROUTES}, {g}}}[$__range]))', color="#D13438",
              description="Requêtes LLM ou MCP sans jeton Entra ID valide ni clé virtuelle (démo A)."),
-        stat("Plafonds atteints (429)", 4, y, 4,
+        stat("Plafonds atteints (429)", 8, y, 8,
              f'sum(increase({REQ}{{status="429", {LLM_MCP_ROUTES}, {F}}}[$__range]))', color="#FF8C00",
              description="Limite de débit de la passerelle, ou quota Foundry renvoyé par le fournisseur."),
-        stat("Réponses sans prix", 8, y, 4,
+        stat("Réponses sans prix", 16, y, 8,
              f'sum(increase(agentgateway_cost_catalog_lookups_total{{status!="Exact", {F}}}[$__range]))', color="#8A8886",
              description="Réponses dont le modèle est absent de la grille de prix (model-costs.json) : leur coût n'est pas compté. À garder à 0."),
-        bargauge("Garde-fous : contrôles par action", 12, y, 12, 4,
-                 "sum by (phase, action) (increase(agentgateway_guardrail_checks_total[$__range]))", "{{phase}} · {{action}}",
-                 description="Contrôles de contenu de la passerelle (regex carte bancaire, webhook NeMo si activé). Métrique sans libellé utilisateur."),
     ]
     y += 4
     p.append(timeseries("Réponses LLM et MCP par code HTTP (par minute)", 0, y, 24, 7,
@@ -345,7 +341,8 @@ def dashboard():
         "time": {"from": "now-24h", "to": "now"},
         "schemaVersion": 39,
         "version": 1,
-        "links": [],
+        "links": [{"type": "dashboards", "title": "Autres tableaux de bord", "tags": ["agentgateway"],
+                   "asDropdown": True, "includeVars": False, "keepTime": True}],
         "annotations": {"list": []},
         "templating": {"list": VARIABLES},
         "panels": build(),

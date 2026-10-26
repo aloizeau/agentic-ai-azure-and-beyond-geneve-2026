@@ -18,7 +18,18 @@
   },
   "schemaVersion": 39,
   "version": 1,
-  "links": [],
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "Autres tableaux de bord",
+      "tags": [
+        "agentgateway"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
   "annotations": {
     "list": []
   },
@@ -120,6 +131,34 @@
         "hide": 0
       },
       {
+        "name": "source",
+        "label": "Mécanisme",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1,
+        "definition": "label_values(guardrail_adapter_decisions_total, source)",
+        "query": {
+          "query": "label_values(guardrail_adapter_decisions_total, source)",
+          "refId": "source"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "hide": 0
+      },
+      {
         "name": "regle",
         "label": "Règle",
         "type": "query",
@@ -183,7 +222,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "expr": "(sum(increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))) or vector(0)",
           "refId": "A",
           "legendFormat": "__auto",
           "instant": true,
@@ -237,7 +276,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(increase(guardrail_adapter_decisions_total{action=\"reject\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "expr": "(sum(increase(guardrail_adapter_decisions_total{action=\"reject\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))) or vector(0)",
           "refId": "A",
           "legendFormat": "__auto",
           "instant": true,
@@ -291,7 +330,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(increase(guardrail_adapter_decisions_total{action=\"mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "expr": "(sum(increase(guardrail_adapter_decisions_total{action=\"mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))) or vector(0)",
           "refId": "A",
           "legendFormat": "__auto",
           "instant": true,
@@ -345,7 +384,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(100 * sum(increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range])) / sum(increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "expr": "(100 * sum(increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range])) / sum(increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))) or vector(0)",
           "refId": "A",
           "legendFormat": "__auto",
           "instant": true,
@@ -357,8 +396,24 @@
           "unit": "percent",
           "decimals": 1,
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#5C2D91"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#107C10",
+                "value": null
+              },
+              {
+                "color": "#FF8C00",
+                "value": 5
+              },
+              {
+                "color": "#D13438",
+                "value": 20
+              }
+            ]
           }
         },
         "overrides": []
@@ -411,8 +466,20 @@
           "unit": "short",
           "decimals": 0,
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#D13438"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#107C10",
+                "value": null
+              },
+              {
+                "color": "#D13438",
+                "value": 1
+              }
+            ]
           }
         },
         "overrides": []
@@ -465,8 +532,24 @@
           "unit": "s",
           "decimals": 3,
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#107C10"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#107C10",
+                "value": null
+              },
+              {
+                "color": "#FF8C00",
+                "value": 1
+              },
+              {
+                "color": "#D13438",
+                "value": 2.5
+              }
+            ]
           }
         },
         "overrides": []
@@ -490,7 +573,7 @@
     {
       "id": 8,
       "type": "row",
-      "title": "Qui déclenche quoi — où faut-il adapter ?",
+      "title": "Qui a arrêté la requête ? — mécanisme, puis règle",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -502,8 +585,8 @@
     },
     {
       "id": 9,
-      "type": "table",
-      "title": "Déclenchements par équipe × règle × profil",
+      "type": "piechart",
+      "title": "Refus + masquages par mécanisme",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -511,8 +594,8 @@
       "gridPos": {
         "x": 0,
         "y": 6,
-        "w": 16,
-        "h": 11
+        "w": 6,
+        "h": 9
       },
       "targets": [
         {
@@ -520,7 +603,70 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (team, rail, profile, direction) (increase(guardrail_adapter_decisions_total{action=\"reject\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "expr": "sum by (source) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{source}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "description": "Qui a décidé : adapter = contrôles Python de l'adaptateur (carte Luhn, secrets dans un message d'outil) ; nemo-regex = règles regex du profil (clés, IBAN, NIR) ; nemo-injection = YARA ; nemo-llm = auto-contrôle par un modèle ; moteur = panne du moteur (pas un contenu)."
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Mécanisme × règle",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 6,
+        "w": 10,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (source, rail) (increase(guardrail_adapter_decisions_total{action=\"reject\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
           "refId": "A",
           "legendFormat": "__auto",
           "instant": true,
@@ -532,7 +678,282 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (team, rail, profile, direction) (increase(guardrail_adapter_decisions_total{action=\"mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "expr": "sum by (source, rail) (increase(guardrail_adapter_decisions_total{action=\"mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
+          "refId": "B",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0078D4"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Refus"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Masquages"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Refus",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Le nom de la règle est celui rapporté par NeMo (flow) ou par l'adaptateur. NeMo ne dit pas QUEL motif d'un regex_detection a correspondu : pour le savoir, rejouer le cas (journaux de l'adaptateur : équipe, utilisateur, règle).",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "Refus",
+              "Value #B": "Masquages",
+              "source": "Mécanisme",
+              "rail": "Règle"
+            },
+            "indexByName": {
+              "Mécanisme": 0,
+              "Règle": 1,
+              "Refus": 2,
+              "Masquages": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Couche 1 — regex native de la passerelle",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 6,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (phase, action) (increase(agentgateway_guardrail_checks_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{phase}} · {{action}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 28,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "description": "Contrôles faits par la passerelle elle-même avant le webhook (carte bancaire) et appels au webhook. Un refus ici n'apparaît PAS dans les métriques de l'adaptateur. Sans libellé équipe."
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Refus + masquages par minute, par mécanisme",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (source) (rate(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__rate_interval])) * 60",
+          "refId": "A",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 18,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Un changement de mécanisme (ex. nemo-regex qui monte alors que adapter reste stable) oriente l'analyse : règle YAML du profil ou contrôle Python de l'adaptateur."
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "Qui déclenche quoi — où faut-il adapter ?",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Déclenchements par équipe × mécanisme × règle × profil",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 16,
+        "h": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (team, source, rail, profile, direction) (increase(guardrail_adapter_decisions_total{action=\"reject\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (team, source, rail, profile, direction) (increase(guardrail_adapter_decisions_total{action=\"mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
           "refId": "B",
           "legendFormat": "__auto",
           "instant": true,
@@ -632,24 +1053,26 @@
               "Value #A": "Refus",
               "Value #B": "Masquages",
               "team": "Équipe",
+              "source": "Mécanisme",
               "rail": "Règle",
               "profile": "Profil",
               "direction": "Sens"
             },
             "indexByName": {
               "Équipe": 0,
-              "Règle": 1,
-              "Profil": 2,
-              "Sens": 3,
-              "Refus": 4,
-              "Masquages": 5
+              "Mécanisme": 1,
+              "Règle": 2,
+              "Profil": 3,
+              "Sens": 4,
+              "Refus": 5,
+              "Masquages": 6
             }
           }
         }
       ]
     },
     {
-      "id": 10,
+      "id": 15,
       "type": "bargauge",
       "title": "Top règles déclenchées",
       "datasource": {
@@ -658,7 +1081,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 6,
+        "y": 23,
         "w": 8,
         "h": 11
       },
@@ -668,7 +1091,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "topk(10, sum by (rail) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range])))",
+          "expr": "topk(10, sum by (rail) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range])))",
           "refId": "A",
           "legendFormat": "{{rail}}",
           "instant": true,
@@ -706,7 +1129,7 @@
       "description": "Règle de l'adaptateur ou de NeMo qui a refusé / masqué. « engine-error » = panne du moteur, pas une règle de contenu."
     },
     {
-      "id": 11,
+      "id": 16,
       "type": "table",
       "title": "Taux de blocage par équipe",
       "datasource": {
@@ -715,7 +1138,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 34,
         "w": 12,
         "h": 8
       },
@@ -725,7 +1148,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (team) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "expr": "sum by (team) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
           "refId": "A",
           "legendFormat": "__auto",
           "instant": true,
@@ -737,7 +1160,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (team) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "expr": "sum by (team) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
           "refId": "B",
           "legendFormat": "__auto",
           "instant": true,
@@ -749,7 +1172,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "100 * sum by (team) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range])) / sum by (team) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "expr": "100 * sum by (team) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range])) / sum by (team) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
           "refId": "C",
           "legendFormat": "__auto",
           "instant": true,
@@ -884,7 +1307,7 @@
       ]
     },
     {
-      "id": 12,
+      "id": 17,
       "type": "bargauge",
       "title": "Refus + masquages par modèle",
       "datasource": {
@@ -893,7 +1316,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 17,
+        "y": 34,
         "w": 6,
         "h": 8
       },
@@ -903,7 +1326,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (model) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "expr": "sum by (model) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
           "refId": "A",
           "legendFormat": "{{model}}",
           "instant": true,
@@ -941,7 +1364,7 @@
       "description": "Modèle demandé par le client (en-tête x-model). Utile pour repérer un déploiement ou un agent qui change de comportement."
     },
     {
-      "id": 13,
+      "id": 18,
       "type": "piechart",
       "title": "Décisions par action",
       "datasource": {
@@ -950,7 +1373,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 17,
+        "y": 34,
         "w": 6,
         "h": 8
       },
@@ -960,7 +1383,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (action) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "expr": "sum by (action) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__range]))",
           "refId": "A",
           "legendFormat": "{{action}}",
           "instant": true,
@@ -1004,7 +1427,7 @@
       "description": "pass = laissé passer, reject = refusé, mask = réécrit."
     },
     {
-      "id": 14,
+      "id": 19,
       "type": "timeseries",
       "title": "Refus + masquages par minute, par règle",
       "datasource": {
@@ -1013,7 +1436,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 25,
+        "y": 42,
         "w": 12,
         "h": 8
       },
@@ -1023,7 +1446,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (rail) (rate(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__rate_interval])) * 60",
+          "expr": "sum by (rail) (rate(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__rate_interval])) * 60",
           "refId": "A",
           "legendFormat": "{{rail}}"
         }
@@ -1065,7 +1488,7 @@
       "description": "Un pic sur UNE règle = une nouvelle source de données sensibles (ou un faux positif après un changement de prompt)."
     },
     {
-      "id": 15,
+      "id": 20,
       "type": "timeseries",
       "title": "Refus + masquages par minute, par équipe",
       "datasource": {
@@ -1074,7 +1497,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 25,
+        "y": 42,
         "w": 12,
         "h": 8
       },
@@ -1084,7 +1507,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (team) (rate(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__rate_interval])) * 60",
+          "expr": "sum by (team) (rate(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", source=~\"$source\", rail=~\"$regle\"}[$__rate_interval])) * 60",
           "refId": "A",
           "legendFormat": "{{team}}"
         }
@@ -1126,20 +1549,20 @@
       "description": "Un pic sur UNE équipe = un agent ou une application à regarder."
     },
     {
-      "id": 16,
+      "id": 21,
       "type": "row",
       "title": "Vue passerelle — qui, sur quelle route (indépendant de l'adaptateur)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 33,
+        "y": 50,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 17,
+      "id": 22,
       "type": "table",
       "title": "Refus 403 sur les routes LLM, par route × équipe × utilisateur",
       "datasource": {
@@ -1148,8 +1571,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
-        "w": 16,
+        "y": 51,
+        "w": 24,
         "h": 9
       },
       "targets": [
@@ -1285,77 +1708,20 @@
       ]
     },
     {
-      "id": 18,
-      "type": "bargauge",
-      "title": "Contrôles de la passerelle par phase et action",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 34,
-        "w": 8,
-        "h": 9
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (phase, action) (increase(agentgateway_guardrail_checks_total[$__range]))",
-          "refId": "A",
-          "legendFormat": "{{phase}} · {{action}}",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "color": {
-            "mode": "continuous-BlPu"
-          },
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "valueMode": "color",
-        "showUnfilled": true,
-        "namePlacement": "left",
-        "sizing": "auto",
-        "minVizHeight": 16,
-        "maxVizHeight": 28,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "description": "Couche 1 (regex native carte bancaire) et appels au webhook, comptés par la passerelle. Sans libellé équipe."
-    },
-    {
-      "id": 19,
+      "id": 23,
       "type": "row",
       "title": "Santé du moteur de règles",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 60,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 20,
+      "id": 24,
       "type": "timeseries",
       "title": "Erreurs du moteur par minute",
       "datasource": {
@@ -1364,7 +1730,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 61,
         "w": 8,
         "h": 8
       },
@@ -1416,7 +1782,7 @@
       "description": "Toute valeur > 0 est une requête refusée en 503 (fail-closed). Alerte GuardrailEngineFailing."
     },
     {
-      "id": 21,
+      "id": 25,
       "type": "timeseries",
       "title": "Latence du moteur (p50 / p95 / p99)",
       "datasource": {
@@ -1425,7 +1791,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 44,
+        "y": 61,
         "w": 10,
         "h": 8
       },
@@ -1495,7 +1861,7 @@
       "description": "Profil default : quelques ms. Profil strict (auto-contrôles LLM) : proche du délai de 3 s ? Alerte GuardrailLatencyHigh."
     },
     {
-      "id": 22,
+      "id": 26,
       "type": "stat",
       "title": "Réplicas qui exposent des métriques",
       "datasource": {
@@ -1504,9 +1870,9 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 44,
+        "y": 61,
         "w": 6,
-        "h": 4
+        "h": 8
       },
       "targets": [
         {
@@ -1526,8 +1892,24 @@
           "unit": "short",
           "decimals": 0,
           "color": {
-            "mode": "fixed",
-            "fixedColor": "#0078D4"
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#D13438",
+                "value": null
+              },
+              {
+                "color": "#FF8C00",
+                "value": 1
+              },
+              {
+                "color": "#107C10",
+                "value": 2
+              }
+            ]
           }
         },
         "overrides": []
@@ -1549,20 +1931,20 @@
       "description": "Attendu : 2 (Deployment guardrail-adapter). 0 = adaptateur absent : le webhook FailClosed refuse tout le trafic LLM."
     },
     {
-      "id": 23,
+      "id": 27,
       "type": "row",
       "title": "Comment s'en servir",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 69,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 24,
+      "id": 28,
       "type": "text",
       "title": "Un garde-fou gêne une application ou un agent : que faire ?",
       "datasource": {
@@ -1571,7 +1953,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 53,
+        "y": 70,
         "w": 24,
         "h": 11
       },
@@ -1582,7 +1964,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**1. Qui ?** Tableau *Déclenchements par équipe × règle × profil* : repérer la ligne. « collaborateurs » = personnes (LibreChat) ; un nom d'équipe = les agents de cette équipe (clé virtuelle).\n\n**2. Quelle règle ?** La colonne *Règle* : `adapter rail` (carte bancaire, secrets dans un message d'outil), règle `regex_detection` (clé `sk-…`, IBAN, NIR…), `injection detection` (YARA), `self check input/output` (profil strict), ou `engine-error` (panne, pas un contenu).\n\n**3. Vrai positif ou faux positif ?** Le détail par personne n'est pas dans les métriques (cardinalité) mais dans les journaux de l'adaptateur, jamais le contenu du prompt :\n\n`kubectl -n agentgateway-system logs -l app.kubernetes.io/name=guardrail-adapter --prefix --since=1h | grep \"decision=reject\" | grep \"team=<équipe>\"`\n\n**4. Adapter pour une seule application / un seul agent, sans toucher aux autres :**\n- *un profil dédié* : copier `guardrails/deploy/rails/default` vers un nouveau profil, ajuster `config.yml`, le monter dans le Deployment, puis l'attribuer à la route de l'application (`x-guardrail-profile` dans `guardrail-policies.yaml`) ;\n- *une route dédiée* à l'application, ciblée par sa propre `AgentgatewayPolicy` (ne pas la cibler aussi depuis `garde-fous-llm`) ;\n- *messages d'outils* (agents MCP) : `TOOL_RAILS=secrets` (défaut) ou `profile` ;\n- ne jamais assouplir `default` pour une seule équipe : cela l'assouplit pour toutes.\n\n**5. Vérifier** : le taux de blocage de l'équipe baisse, les autres équipes ne bougent pas, les erreurs du moteur restent à 0.\n\n*Colonne Équipe à « - » :* la passerelle n'a pas transmis l'en-tête `x-team` (expression CEL `apiKey.team` à valider dans les en-têtes du webhook, cf. guardrails/README.md)."
+        "content": "**1. Qui ?** Tableau *Déclenchements par équipe × règle × profil* : repérer la ligne. « collaborateurs » = personnes (LibreChat) ; un nom d'équipe = les agents de cette équipe (clé virtuelle).\n\n**2. Quel mécanisme, quelle règle ?** Colonne *Mécanisme* : `adapter` (carte bancaire Luhn, secrets dans un message d'outil — code Python de l'adaptateur, `app/dlp.py`), `nemo-regex` (motifs du profil : clé `sk-…`, IBAN, NIR — `rails/<profil>/config.yml`), `nemo-injection` (YARA), `nemo-llm` (auto-contrôle par un modèle, profil strict), `moteur` (panne, pas un contenu). Refus de la **couche 1** (regex native de la passerelle) : panneau dédié, il n'est pas compté par l'adaptateur. La colonne *Règle* donne le nom précis.\n\n**3. Vrai positif ou faux positif ?** Le détail par personne n'est pas dans les métriques (cardinalité) mais dans les journaux de l'adaptateur, jamais le contenu du prompt :\n\n`kubectl -n agentgateway-system logs -l app.kubernetes.io/name=guardrail-adapter --prefix --since=1h | grep \"decision=reject\" | grep \"team=<équipe>\"`\n\n**4. Adapter pour une seule application / un seul agent, sans toucher aux autres :**\n- *un profil dédié* : copier `guardrails/deploy/rails/default` vers un nouveau profil, ajuster `config.yml`, le monter dans le Deployment, puis l'attribuer à la route de l'application (`x-guardrail-profile` dans `guardrail-policies.yaml`) ;\n- *une route dédiée* à l'application, ciblée par sa propre `AgentgatewayPolicy` (ne pas la cibler aussi depuis `garde-fous-llm`) ;\n- *messages d'outils* (agents MCP) : `TOOL_RAILS=secrets` (défaut) ou `profile` ;\n- ne jamais assouplir `default` pour une seule équipe : cela l'assouplit pour toutes.\n\n**5. Vérifier** : le taux de blocage de l'équipe baisse, les autres équipes ne bougent pas, les erreurs du moteur restent à 0.\n\n*Colonne Équipe à « - » :* la passerelle n'a pas transmis l'en-tête `x-team` (expression CEL `apiKey.team` à valider dans les en-têtes du webhook, cf. guardrails/README.md)."
       }
     }
   ]

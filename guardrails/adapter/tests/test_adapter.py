@@ -310,6 +310,16 @@ def test_ready_and_metrics(client):
     assert 'action="reject"' in m
 
 
+@pytest.mark.parametrize("rail,source", [
+    (None, "-"), ("carte bancaire (Luhn)", "adapter"), ("secrets (regex)", "adapter"),
+    ("regex check input", "nemo-regex"), ("injection detection", "nemo-injection"),
+    ("self check input", "nemo-llm"), ("engine-error", "moteur"), ("autre", "nemo-autre"),
+])
+def test_source_of(rail, source):
+    from app.main import source_of
+    assert source_of(rail) == source
+
+
 def test_decision_metric_carries_team_and_model(client):
     # Dashboard « Garde-fous » : qui déclenche quoi se lit sur les libellés team / model.
     r = client.post("/request", json=prompt(("user", "ma clé sk-proj-AbCdEfGhIjKlMnOpQrStUvWx123456")),
@@ -318,6 +328,7 @@ def test_decision_metric_carries_team_and_model(client):
     m = client.get("/metrics").text
     line = next(l for l in m.splitlines() if l.startswith("guardrail_adapter_decisions_total{") and 'team="equipe-docs"' in l)
     assert 'action="reject"' in line and 'model="gpt-test"' in line
+    assert 'source="nemo-regex"' in line or 'source="adapter"' in line
     assert "alice" not in m          # la personne n'est jamais un libellé (cardinalité)
 
 

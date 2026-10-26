@@ -7,7 +7,7 @@ decide whether to adapt the rails for one application or agent (new profile, tun
 route) or whether the rule is doing its job.
 
 Sources (Prometheus):
-  guardrail_adapter_decisions_total{direction,action,rail,profile,team,model}   NeMo adapter, layer 2
+  guardrail_adapter_decisions_total{direction,action,rail,profile,team,model,source}   NeMo adapter, layer 2
   guardrail_adapter_errors_total{direction,profile}                             rail engine failures
   guardrail_adapter_check_duration_seconds_bucket{direction,backend}            engine latency
   agentgateway_guardrail_checks_total{phase,action}                             gateway, layer 1 + webhook
@@ -29,7 +29,7 @@ GCHK = "agentgateway_guardrail_checks_total"
 REQ = "agentgateway_requests_total"
 LLM = 'route=~".*llm.*"'
 
-F = 'team=~"$equipe", profile=~"$profil", direction=~"$direction", rail=~"$regle"'
+F = 'team=~"$equipe", profile=~"$profil", direction=~"$direction", source=~"$source", rail=~"$regle"'
 FE = 'profile=~"$profil", direction=~"$direction"'          # errors carry no team / rail
 BLOCK = 'action=~"reject|mask"'
 
@@ -58,16 +58,42 @@ def build():
     ]
     y += 4
 
+    # --------------------------------------------------------- who stopped the request
+    p.append(row("Qui a arrêté la requête ? — mécanisme, puis règle", y)); y += 1
+    p += [
+        pie("Refus + masquages par mécanisme", 0, y, 6, 9, f"sum by (source) (increase({DEC}{{{BLOCK}, {F}}}[$__range]))",
+            "{{source}}", unit="short",
+            description="Qui a décidé : adapter = contrôles Python de l'adaptateur (carte Luhn, secrets dans un message d'outil) ; "
+                        "nemo-regex = règles regex du profil (clés, IBAN, NIR) ; nemo-injection = YARA ; nemo-llm = auto-contrôle par un modèle ; "
+                        "moteur = panne du moteur (pas un contenu)."),
+        table("Mécanisme × règle", 6, y, 10, 9,
+              [("Refus", f'sum by (source, rail) (increase({DEC}{{action="reject", {F}}}[$__range]))', "short", 0),
+               ("Masquages", f'sum by (source, rail) (increase({DEC}{{action="mask", {F}}}[$__range]))', "short", 0)],
+              {"source": "Mécanisme", "rail": "Règle"}, "Refus",
+              "Le nom de la règle est celui rapporté par NeMo (flow) ou par l'adaptateur. NeMo ne dit pas QUEL motif d'un regex_detection a "
+              "correspondu : pour le savoir, rejouer le cas (journaux de l'adaptateur : équipe, utilisateur, règle)."),
+        bargauge("Couche 1 — regex native de la passerelle", 16, y, 8, 9,
+                 f"sum by (phase, action) (increase({GCHK}[$__range]))", "{{phase}} · {{action}}",
+                 description="Contrôles faits par la passerelle elle-même avant le webhook (carte bancaire) et appels au webhook. "
+                             "Un refus ici n'apparaît PAS dans les métriques de l'adaptateur. Sans libellé équipe."),
+    ]
+    y += 9
+    p.append(timeseries("Refus + masquages par minute, par mécanisme", 0, y, 24, 7,
+                        [target(f"sum by (source) (rate({DEC}{{{BLOCK}, {F}}}[$__rate_interval])) * 60", "{{source}}")], "short", stack=True,
+                        description="Un changement de mécanisme (ex. nemo-regex qui monte alors que adapter reste stable) oriente l'analyse : "
+                                    "règle YAML du profil ou contrôle Python de l'adaptateur."))
+    y += 7
+
     # ----------------------------------------------------------- who triggers what
     p.append(row("Qui déclenche quoi — où faut-il adapter ?", y)); y += 1
-    by = "sum by (team, rail, profile, direction)"
+    by = "sum by (team, source, rail, profile, direction)"
     p.append(table(
-        "Déclenchements par équipe × règle × profil", 0, y, 16, 11,
+        "Déclenchements par équipe × mécanisme × règle × profil", 0, y, 16, 11,
         [
             ("Refus", f'{by} (increase({DEC}{{action="reject", {F}}}[$__range]))', "short", 0),
             ("Masquages", f'{by} (increase({DEC}{{action="mask", {F}}}[$__range]))', "short", 0),
         ],
-        {"team": "Équipe", "rail": "Règle", "profile": "Profil", "direction": "Sens"},
+        {"team": "Équipe", "source": "Mécanisme", "rail": "Règle", "profile": "Profil", "direction": "Sens"},
         "Refus",
         "Une ligne = une règle qui s'est déclenchée pour une équipe. « collaborateurs » = personnes (LibreChat) ; "
         "« <équipe> » = agents (clé virtuelle) ; « - » = la passerelle n'a pas transmis l'en-tête x-team.",
@@ -112,7 +138,7 @@ def build():
     p.append(row("Vue passerelle — qui, sur quelle route (indépendant de l'adaptateur)", y)); y += 1
     by_gw = "sum by (route, team, user)"
     p.append(table(
-        "Refus 403 sur les routes LLM, par route × équipe × utilisateur", 0, y, 16, 9,
+        "Refus 403 sur les routes LLM, par route × équipe × utilisateur", 0, y, 24, 9,
         [
             ("403", f'{by_gw} (increase({REQ}{{status="403", {LLM}}}[$__range]))', "short", 0),
             ("5xx", f'{by_gw} (increase({REQ}{{status=~"5..", {LLM}}}[$__range]))', "short", 0),
@@ -122,9 +148,6 @@ def build():
         "croiser avec le tableau des règles. 5xx = moteur ou adaptateur indisponible (FailClosed). "
         "L'utilisateur n'apparaît pas si usage_metrics_per_user = false.",
     ))
-    p.append(bargauge("Contrôles de la passerelle par phase et action", 16, y, 8, 9,
-                      f"sum by (phase, action) (increase({GCHK}[$__range]))", "{{phase}} · {{action}}",
-                      description="Couche 1 (regex native carte bancaire) et appels au webhook, comptés par la passerelle. Sans libellé équipe."))
     y += 9
 
     # ---------------------------------------------------------------- engine health
@@ -148,8 +171,10 @@ def build():
     p.append(text("Un garde-fou gêne une application ou un agent : que faire ?", 0, y, 24, 11, (
         "**1. Qui ?** Tableau *Déclenchements par équipe × règle × profil* : repérer la ligne. « collaborateurs » = personnes (LibreChat) ; "
         "un nom d'équipe = les agents de cette équipe (clé virtuelle).\n\n"
-        "**2. Quelle règle ?** La colonne *Règle* : `adapter rail` (carte bancaire, secrets dans un message d'outil), règle `regex_detection` "
-        "(clé `sk-…`, IBAN, NIR…), `injection detection` (YARA), `self check input/output` (profil strict), ou `engine-error` (panne, pas un contenu).\n\n"
+        "**2. Quel mécanisme, quelle règle ?** Colonne *Mécanisme* : `adapter` (carte bancaire Luhn, secrets dans un message d'outil — code Python "
+        "de l'adaptateur, `app/dlp.py`), `nemo-regex` (motifs du profil : clé `sk-…`, IBAN, NIR — `rails/<profil>/config.yml`), `nemo-injection` (YARA), "
+        "`nemo-llm` (auto-contrôle par un modèle, profil strict), `moteur` (panne, pas un contenu). Refus de la **couche 1** (regex native "
+        "de la passerelle) : panneau dédié, il n'est pas compté par l'adaptateur. La colonne *Règle* donne le nom précis.\n\n"
         "**3. Vrai positif ou faux positif ?** Le détail par personne n'est pas dans les métriques (cardinalité) mais dans les journaux "
         "de l'adaptateur, jamais le contenu du prompt :\n\n"
         "`kubectl -n agentgateway-system logs -l app.kubernetes.io/name=guardrail-adapter --prefix --since=1h | grep \"decision=reject\" | grep \"team=<équipe>\"`\n\n"
@@ -181,11 +206,40 @@ VARIABLES = [
      "allValue": ".*", "refresh": 2, "sort": 1,
      "definition": f"label_values({DEC}, direction)", "query": {"query": f"label_values({DEC}, direction)", "refId": "direction"},
      "current": {"text": ["All"], "value": ["$__all"]}, "hide": 0},
+    {"name": "source", "label": "Mécanisme", "type": "query", "datasource": DS, "multi": True, "includeAll": True,
+     "allValue": ".*", "refresh": 2, "sort": 1,
+     "definition": f"label_values({DEC}, source)", "query": {"query": f"label_values({DEC}, source)", "refId": "source"},
+     "current": {"text": ["All"], "value": ["$__all"]}, "hide": 0},
     {"name": "regle", "label": "Règle", "type": "query", "datasource": DS, "multi": True, "includeAll": True,
      "allValue": ".*", "refresh": 2, "sort": 1,
      "definition": f"label_values({DEC}, rail)", "query": {"query": f"label_values({DEC}, rail)", "refId": "regle"},
      "current": {"text": ["All"], "value": ["$__all"]}, "hide": 0},
 ]
+
+
+def _thresholds(panels, title, steps):
+    """Colore un compteur selon sa valeur (vert / orange / rouge) au lieu d'une couleur fixe."""
+    for pn in panels:
+        if pn["title"] == title:
+            pn["fieldConfig"]["defaults"]["color"] = {"mode": "thresholds"}
+            pn["fieldConfig"]["defaults"]["thresholds"] = {
+                "mode": "absolute", "steps": [{"color": c, "value": v} for c, v in steps]}
+            return
+    raise KeyError(title)
+
+
+def _tuned_panels():
+    panels = build()
+    green, orange, red = "#107C10", "#FF8C00", "#D13438"
+    _thresholds(panels, "Erreurs du moteur", [(green, None), (red, 1)])
+    _thresholds(panels, "Taux de blocage", [(green, None), (orange, 5), (red, 20)])
+    # Le webhook coupe à 3 s : orange à 1 s (alerte GuardrailLatencyHigh), rouge près du délai.
+    _thresholds(panels, "Latence p95 du moteur", [(green, None), (orange, 1), (red, 2.5)])
+    _thresholds(panels, "Réplicas qui exposent des métriques", [(red, None), (orange, 1), (green, 2)])
+    for pn in panels:
+        if pn["title"] == "Réplicas qui exposent des métriques":
+            pn["gridPos"]["h"] = 8          # même hauteur que les graphiques voisins
+    return panels
 
 
 def dashboard():
@@ -201,10 +255,11 @@ def dashboard():
         "time": {"from": "now-24h", "to": "now"},
         "schemaVersion": 39,
         "version": 1,
-        "links": [],
+        "links": [{"type": "dashboards", "title": "Autres tableaux de bord", "tags": ["agentgateway"],
+                   "asDropdown": True, "includeVars": False, "keepTime": True}],
         "annotations": {"list": []},
         "templating": {"list": VARIABLES},
-        "panels": build(),
+        "panels": _tuned_panels(),
     }
 
 

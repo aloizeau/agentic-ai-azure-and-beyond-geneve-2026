@@ -122,13 +122,14 @@ Consequences for this platform:
 
 ## Observability — who triggers which rule
 
-The adapter exposes `guardrail_adapter_decisions_total{direction,action,rail,profile,team,model}`
+The adapter exposes `guardrail_adapter_decisions_total{direction,action,rail,profile,team,model,source}`
 (`team` ← `x-team`, `model` ← `x-model`, both set by the webhook policy and bounded to 64 characters),
 `guardrail_adapter_errors_total` and `guardrail_adapter_check_duration_seconds`. Every non-`pass`
 decision (and every engine failure) also writes one log line with the caller (`user`, from `x-user`)
 and no prompt content: per-person detail lives in the logs, not in metric labels.
 The Grafana dashboard « Garde-fous » (`monitoring/`) reads them; use it to decide whether to adapt the
 rails for one application or agent (dedicated profile or route) rather than loosen `default` for everyone.
+`source` says which mechanism decided: `adapter` (Python checks in `app/dlp.py`), `nemo-regex`, `nemo-injection` (YARA), `nemo-llm` (self checks) or `moteur` (engine failure); it is derived from NeMo's rail name (`source_of` in `app/main.py`, VÉRIFIER D-7: unknown names fall into `nemo-autre`). Layer 1 (the gateway's native regex) never reaches the adapter and is counted by `agentgateway_guardrail_checks_total`.
 Header names: `TEAM_HEADER`, `USER_HEADER`, `MODEL_HEADER`.
 
 ## Known limitations — validate before the demo

@@ -36,7 +36,7 @@ log = logging.getLogger("guardrail-adapter")
 DECISIONS = Counter(
     "guardrail_adapter_decisions_total",
     "Decisions returned to the gateway.",
-    ["direction", "action", "rail", "profile", "team", "model"],
+    ["direction", "action", "rail", "profile", "team", "model", "source"],
 )
 ERRORS = Counter("guardrail_adapter_errors_total", "Rail engine failures.", ["direction", "profile"])
 LATENCY = Histogram(
@@ -45,6 +45,32 @@ LATENCY = Histogram(
     ["direction", "backend"],
     buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 4),
 )
+
+
+def source_of(rail: str | None) -> str:
+    """Quel mécanisme a décidé, pour lire « qui arrête les requêtes » sans connaître les noms de règles.
+
+    adapter         contrôles Python de l'adaptateur (carte bancaire/Luhn, secrets dans un message d'outil)
+    nemo-regex      règles `regex_detection` du profil (clés, IBAN, NIR…)
+    nemo-injection  règles YARA (code, SQL, XSS, gabarits)
+    nemo-llm        auto-contrôles par un modèle (profil strict)
+    moteur          panne du moteur (FAIL_MODE), pas un contenu
+    nemo-autre      toute autre règle NeMo
+    """
+    if not rail:
+        return "-"
+    if rail in (dlp.CARD_RAIL, dlp.SECRET_RAIL):
+        return "adapter"
+    r = rail.lower()
+    if "engine-error" in r:
+        return "moteur"
+    if "regex" in r:
+        return "nemo-regex"
+    if "injection" in r:
+        return "nemo-injection"
+    if "self check" in r or "self_check" in r:
+        return "nemo-llm"
+    return "nemo-autre"
 
 
 # ------------------------------------------------------------- contract models
@@ -178,12 +204,13 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
 
     def decide(direction: Direction, action: str, rail: str | None, req: Request) -> None:
         team, model = label_of(req, s.team_header), label_of(req, s.model_header)
-        DECISIONS.labels(direction.value, action, rail or "-", profile_of(req), team, model).inc()
+        source = source_of(rail)
+        DECISIONS.labels(direction.value, action, rail or "-", profile_of(req), team, model, source).inc()
         # Une ligne par déclenchement : le détail par personne (`user`) vit ici, pas dans
         # les métriques (cardinalité). Jamais le contenu du prompt.
         if action != "pass" or rail == "engine-error":
-            log.info("decision=%s direction=%s rail=%s profile=%s team=%s user=%s model=%s",
-                     action, direction.value, rail or "-", profile_of(req), team,
+            log.info("decision=%s direction=%s source=%s rail=%s profile=%s team=%s user=%s model=%s",
+                     action, direction.value, source, rail or "-", profile_of(req), team,
                      label_of(req, s.user_header), model)
 
     # --------------------------------------------------------------- /request

@@ -15,7 +15,7 @@ token and every tool call, whichever front end, agent or model is involved.
 | Par équipe et par modèle | cost by team, cost by Foundry deployment, team × deployment, tokens per minute, LLM latency and time to first token | `gen_ai_request_model`, `gen_ai_server_request_duration`, `gen_ai_server_time_to_first_token` |
 | Outils MCP | tools called (server · tool), agents asked through `invoke_agent`, MCP requests by method, who uses which tool | `mcp_requests_total` (`method`, `server`, `resource`, `agent`) |
 | Recherche web (DuckDuckGo) | searches, pages fetched, active users, top users, calls per tool and per user over time | `mcp_requests_total` (`server="web-search"`, `resource` = `search` / `fetch_content` / `expand_link`) |
-| Accès et garde-fous | 401, 429, responses with no price, guardrail checks by action, responses by HTTP code | `requests_total`, `guardrail_checks_total`, `cost_catalog_lookups_total` |
+| Accès et plafonds | 401, 429, responses with no price, responses by HTTP code (guardrails: see the « Garde-fous » dashboard below) | `requests_total`, `cost_catalog_lookups_total` |
 | Skills | why they are not on this dashboard (below) | — |
 
 Filters: door (internal / public), team, user, Foundry deployment.
@@ -64,7 +64,8 @@ guardrail, and should it be adapted for one application or agent?*
 | Section | Panels | Source metric |
 |---|---|---|
 | Vue d'ensemble | checks, rejects, masks, block ratio, engine errors, p95 latency | `guardrail_adapter_decisions_total`, `guardrail_adapter_errors_total`, `guardrail_adapter_check_duration_seconds` |
-| Qui déclenche quoi | table team × rule × profile × direction, top rules, block ratio per team, per model, per minute | `guardrail_adapter_decisions_total{direction,action,rail,profile,team,model}` |
+| Qui a arrêté la requête | pie and table by mechanism (`adapter` Python checks, `nemo-regex`, `nemo-injection`, `nemo-llm`, `moteur`) × rule, plus the gateway's own layer 1 | `guardrail_adapter_decisions_total{source,rail}`, `agentgateway_guardrail_checks_total` |
+| Qui déclenche quoi | table team × rule × profile × direction, top rules, block ratio per team, per model, per minute | `guardrail_adapter_decisions_total{direction,action,rail,profile,team,model,source}` |
 | Vue passerelle | 403 / 5xx on LLM routes per route × team × user, gateway guardrail checks | `agentgateway_requests_total`, `agentgateway_guardrail_checks_total` |
 | Santé du moteur | engine errors, latency p50/p95/p99, adapter replicas | adapter metrics |
 | Comment s'en servir | reading guide and the ways to adapt rails for one application | — |

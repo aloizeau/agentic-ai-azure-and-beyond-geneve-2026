@@ -18,7 +18,18 @@
   },
   "schemaVersion": 39,
   "version": 1,
-  "links": [],
+  "links": [
+    {
+      "type": "dashboards",
+      "title": "Autres tableaux de bord",
+      "tags": [
+        "agentgateway"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ],
   "annotations": {
     "list": []
   },
@@ -1984,7 +1995,7 @@
     {
       "id": 31,
       "type": "row",
-      "title": "Accès et garde-fous",
+      "title": "Accès et plafonds (garde-fous : tableau de bord « Garde-fous »)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -2005,7 +2016,7 @@
       "gridPos": {
         "x": 0,
         "y": 74,
-        "w": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
@@ -2057,9 +2068,9 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 4,
+        "x": 8,
         "y": 74,
-        "w": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
@@ -2111,9 +2122,9 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 8,
+        "x": 16,
         "y": 74,
-        "w": 4,
+        "w": 8,
         "h": 4
       },
       "targets": [
@@ -2158,63 +2169,6 @@
     },
     {
       "id": 35,
-      "type": "bargauge",
-      "title": "Garde-fous : contrôles par action",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 74,
-        "w": 12,
-        "h": 4
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (phase, action) (increase(agentgateway_guardrail_checks_total[$__range]))",
-          "refId": "A",
-          "legendFormat": "{{phase}} · {{action}}",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "decimals": 0,
-          "color": {
-            "mode": "continuous-BlPu"
-          },
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "valueMode": "color",
-        "showUnfilled": true,
-        "namePlacement": "left",
-        "sizing": "auto",
-        "minVizHeight": 16,
-        "maxVizHeight": 28,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "description": "Contrôles de contenu de la passerelle (regex carte bancaire, webhook NeMo si activé). Métrique sans libellé utilisateur."
-    },
-    {
-      "id": 36,
       "type": "timeseries",
       "title": "Réponses LLM et MCP par code HTTP (par minute)",
       "datasource": {
@@ -2274,7 +2228,7 @@
       }
     },
     {
-      "id": 37,
+      "id": 36,
       "type": "row",
       "title": "Skills",
       "collapsed": false,
@@ -2287,7 +2241,7 @@
       "panels": []
     },
     {
-      "id": 38,
+      "id": 37,
       "type": "text",
       "title": "Et les skills ?",
       "datasource": {
