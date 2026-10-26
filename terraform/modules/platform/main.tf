@@ -149,6 +149,10 @@ resource "helm_release" "kube_prometheus_stack" {
   values = concat([yamlencode({
     grafana = {
       adminPassword = random_password.grafana.result
+      # The data disk is ReadWriteOnce: a rolling update starts the new pod (possibly on
+      # another node) while the old one still holds the disk, and never finishes
+      # (Multi-Attach, helm upgrade "context deadline exceeded"). Stop the old pod first.
+      deploymentStrategy = { type = "Recreate" }
       # Workload identity: Grafana queries Log Analytics (Azure Monitor data source below)
       # with the `grafana` identity (Log Analytics Reader on the workspace), no secret.
       serviceAccount = {
