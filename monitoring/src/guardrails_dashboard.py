@@ -40,7 +40,7 @@ BLOCKED_KQL = "\n".join([
     "| project Heure = TimeGenerated, ['Décision'] = tostring(m.decision), Sens = tostring(m.direction),",
     "    ['Mécanisme'] = tostring(m.source), ['Règle'] = tostring(m.rail), ['Équipe'] = tostring(m.team),",
     "    Utilisateur = tostring(m.user), Profil = tostring(m.profile), ['Modèle'] = tostring(m.model),",
-    "    ['Concerné'] = iff(isempty(tostring(m.where)), \"message utilisateur\", tostring(m.where)),",
+    "    ['Concerné'] = iff(isempty(tostring(m['where'])), \"message utilisateur\", tostring(m['where'])),",
     "    Message = tostring(m.preview)",
     "| order by Heure desc",
     "| take 200",
