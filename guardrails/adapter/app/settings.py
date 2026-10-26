@@ -40,6 +40,11 @@ class Settings:
     )
     # Header the gateway sets (CEL literal) to pick a profile per route/team.
     profile_header: str = field(default_factory=lambda: _env("PROFILE_HEADER", "x-guardrail-profile"))
+    # En-têtes posés par la passerelle (CEL) : qui déclenche un garde-fou. `team` et `model`
+    # (bornés) deviennent des libellés des métriques ; `user` n'est écrit que dans les journaux.
+    team_header: str = field(default_factory=lambda: _env("TEAM_HEADER", "x-team"))
+    user_header: str = field(default_factory=lambda: _env("USER_HEADER", "x-user"))
+    model_header: str = field(default_factory=lambda: _env("MODEL_HEADER", "x-model"))
     # Taille maximale d'un corps de requête (octets), refusée en 413 avant tout
     # parsing JSON : un corps géant ne doit pas épuiser la mémoire du pod.
     max_body_bytes: int = field(default_factory=lambda: int(_env("MAX_BODY_BYTES", str(1024 * 1024))))

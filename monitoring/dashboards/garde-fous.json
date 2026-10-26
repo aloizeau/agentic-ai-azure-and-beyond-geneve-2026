@@ -1,0 +1,1589 @@
+{
+  "uid": "garde-fous",
+  "title": "Garde-fous — déclenchements par équipe, règle, profil",
+  "description": "Qui déclenche quel garde-fou (NeMo Guardrails + regex native), sur quel profil, et la santé du moteur de règles.",
+  "tags": [
+    "agentgateway",
+    "guardrails",
+    "nemo",
+    "securite"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "schemaVersion": 39,
+  "version": 1,
+  "links": [],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0
+      },
+      {
+        "name": "equipe",
+        "label": "Équipe",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1,
+        "definition": "label_values(guardrail_adapter_decisions_total, team)",
+        "query": {
+          "query": "label_values(guardrail_adapter_decisions_total, team)",
+          "refId": "equipe"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "hide": 0
+      },
+      {
+        "name": "profil",
+        "label": "Profil",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1,
+        "definition": "label_values(guardrail_adapter_decisions_total, profile)",
+        "query": {
+          "query": "label_values(guardrail_adapter_decisions_total, profile)",
+          "refId": "profil"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "hide": 0
+      },
+      {
+        "name": "direction",
+        "label": "Sens",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1,
+        "definition": "label_values(guardrail_adapter_decisions_total, direction)",
+        "query": {
+          "query": "label_values(guardrail_adapter_decisions_total, direction)",
+          "refId": "direction"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "hide": 0
+      },
+      {
+        "name": "regle",
+        "label": "Règle",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1,
+        "definition": "label_values(guardrail_adapter_decisions_total, rail)",
+        "query": {
+          "query": "label_values(guardrail_adapter_decisions_total, rail)",
+          "refId": "regle"
+        },
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Vue d'ensemble — adaptateur NeMo (couche 2), sur la période sélectionnée",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Contrôles",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0078D4"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Décisions rendues à la passerelle par l'adaptateur (une par requête et par sens : entrée / sortie)."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Refus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(increase(guardrail_adapter_decisions_total{action=\"reject\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#D13438"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Requêtes rejetées avant le modèle (HTTP 403), ou 503 si le moteur est en panne (règle « engine-error »)."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Masquages",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(increase(guardrail_adapter_decisions_total{action=\"mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF8C00"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Contenu réécrit (entrée) ou réponse remplacée par le texte de refus (sortie : le contrat n'a pas de Reject)."
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Taux de blocage",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(100 * sum(increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range])) / sum(increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#5C2D91"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Refus + masquages / contrôles. Un taux qui monte pour UNE équipe : regarder sa règle dominante ci-dessous."
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Erreurs du moteur",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(increase(guardrail_adapter_errors_total{profile=~\"$profil\", direction=~\"$direction\"}[$__range]))) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#D13438"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Le moteur NeMo a échoué (exception, délai). FAIL_MODE=closed : ces requêtes sont refusées. Doit rester à 0."
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Latence p95 du moteur",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(histogram_quantile(0.95, sum by (le) (increase(guardrail_adapter_check_duration_seconds_bucket{direction=~\"$direction\"}[$__range])))) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#107C10"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Temps passé dans le moteur de règles. Le webhook coupe à 3 s (FailClosed)."
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Qui déclenche quoi — où faut-il adapter ?",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Déclenchements par équipe × règle × profil",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 16,
+        "h": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (team, rail, profile, direction) (increase(guardrail_adapter_decisions_total{action=\"reject\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (team, rail, profile, direction) (increase(guardrail_adapter_decisions_total{action=\"mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "refId": "B",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0078D4"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Refus"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Masquages"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Refus",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Une ligne = une règle qui s'est déclenchée pour une équipe. « collaborateurs » = personnes (LibreChat) ; « <équipe> » = agents (clé virtuelle) ; « - » = la passerelle n'a pas transmis l'en-tête x-team.",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "Refus",
+              "Value #B": "Masquages",
+              "team": "Équipe",
+              "rail": "Règle",
+              "profile": "Profil",
+              "direction": "Sens"
+            },
+            "indexByName": {
+              "Équipe": 0,
+              "Règle": 1,
+              "Profil": 2,
+              "Sens": 3,
+              "Refus": 4,
+              "Masquages": 5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Top règles déclenchées",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 6,
+        "w": 8,
+        "h": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "topk(10, sum by (rail) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range])))",
+          "refId": "A",
+          "legendFormat": "{{rail}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 28,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "description": "Règle de l'adaptateur ou de NeMo qui a refusé / masqué. « engine-error » = panne du moteur, pas une règle de contenu."
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Taux de blocage par équipe",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (team) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (team) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "refId": "B",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "100 * sum by (team) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range])) / sum by (team) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "refId": "C",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0078D4"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Contrôles"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Refus + masquages"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Taux de blocage"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Taux de blocage",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Un taux élevé n'est pas forcément un défaut : c'est un point de départ. Comparer avec la règle dominante (tableau du dessus) avant de toucher aux rails.",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "Contrôles",
+              "Value #B": "Refus + masquages",
+              "Value #C": "Taux de blocage",
+              "team": "Équipe"
+            },
+            "indexByName": {
+              "Équipe": 0,
+              "Contrôles": 1,
+              "Refus + masquages": 2,
+              "Taux de blocage": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "Refus + masquages par modèle",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (model) (increase(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{model}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 28,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "description": "Modèle demandé par le client (en-tête x-model). Utile pour repérer un déploiement ou un agent qui change de comportement."
+    },
+    {
+      "id": 13,
+      "type": "piechart",
+      "title": "Décisions par action",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 17,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (action) (increase(guardrail_adapter_decisions_total{team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{action}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value",
+            "percent"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "description": "pass = laissé passer, reject = refusé, mask = réécrit."
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Refus + masquages par minute, par règle",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (rail) (rate(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__rate_interval])) * 60",
+          "refId": "A",
+          "legendFormat": "{{rail}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 18,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Un pic sur UNE règle = une nouvelle source de données sensibles (ou un faux positif après un changement de prompt)."
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Refus + masquages par minute, par équipe",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (team) (rate(guardrail_adapter_decisions_total{action=~\"reject|mask\", team=~\"$equipe\", profile=~\"$profil\", direction=~\"$direction\", rail=~\"$regle\"}[$__rate_interval])) * 60",
+          "refId": "A",
+          "legendFormat": "{{team}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 18,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Un pic sur UNE équipe = un agent ou une application à regarder."
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "Vue passerelle — qui, sur quelle route (indépendant de l'adaptateur)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Refus 403 sur les routes LLM, par route × équipe × utilisateur",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 16,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (route, team, user) (increase(agentgateway_requests_total{status=\"403\", route=~\".*llm.*\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (route, team, user) (increase(agentgateway_requests_total{status=~\"5..\", route=~\".*llm.*\"}[$__range]))",
+          "refId": "B",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0078D4"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "403"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "403",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Code 403 = refus d'un garde-fou (couche 1 ou 2, REJECT_STATUS) mais aussi tout refus d'autorisation de la passerelle : croiser avec le tableau des règles. 5xx = moteur ou adaptateur indisponible (FailClosed). L'utilisateur n'apparaît pas si usage_metrics_per_user = false.",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "403",
+              "Value #B": "5xx",
+              "route": "Route",
+              "team": "Équipe",
+              "user": "Utilisateur"
+            },
+            "indexByName": {
+              "Route": 0,
+              "Équipe": 1,
+              "Utilisateur": 2,
+              "403": 3,
+              "5xx": 4
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "bargauge",
+      "title": "Contrôles de la passerelle par phase et action",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 34,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (phase, action) (increase(agentgateway_guardrail_checks_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{phase}} · {{action}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 28,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "description": "Couche 1 (regex native carte bancaire) et appels au webhook, comptés par la passerelle. Sans libellé équipe."
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "title": "Santé du moteur de règles",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 43,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Erreurs du moteur par minute",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (direction, profile) (rate(guardrail_adapter_errors_total{profile=~\"$profil\", direction=~\"$direction\"}[$__rate_interval])) * 60",
+          "refId": "A",
+          "legendFormat": "{{direction}} · {{profile}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 18,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Toute valeur > 0 est une requête refusée en 503 (fail-closed). Alerte GuardrailEngineFailing."
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Latence du moteur (p50 / p95 / p99)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 44,
+        "w": 10,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(guardrail_adapter_check_duration_seconds_bucket{direction=~\"$direction\"}[$__rate_interval])))",
+          "refId": "A",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(guardrail_adapter_check_duration_seconds_bucket{direction=~\"$direction\"}[$__rate_interval])))",
+          "refId": "B",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(guardrail_adapter_check_duration_seconds_bucket{direction=~\"$direction\"}[$__rate_interval])))",
+          "refId": "C",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "description": "Profil default : quelques ms. Profil strict (auto-contrôles LLM) : proche du délai de 3 s ? Alerte GuardrailLatencyHigh."
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Réplicas qui exposent des métriques",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 44,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(count(count by (pod) (guardrail_adapter_check_duration_seconds_count))) or vector(0)",
+          "refId": "A",
+          "legendFormat": "__auto",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#0078D4"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "description": "Attendu : 2 (Deployment guardrail-adapter). 0 = adaptateur absent : le webhook FailClosed refuse tout le trafic LLM."
+    },
+    {
+      "id": 23,
+      "type": "row",
+      "title": "Comment s'en servir",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 24,
+      "type": "text",
+      "title": "Un garde-fou gêne une application ou un agent : que faire ?",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 24,
+        "h": 11
+      },
+      "targets": [],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**1. Qui ?** Tableau *Déclenchements par équipe × règle × profil* : repérer la ligne. « collaborateurs » = personnes (LibreChat) ; un nom d'équipe = les agents de cette équipe (clé virtuelle).\n\n**2. Quelle règle ?** La colonne *Règle* : `adapter rail` (carte bancaire, secrets dans un message d'outil), règle `regex_detection` (clé `sk-…`, IBAN, NIR…), `injection detection` (YARA), `self check input/output` (profil strict), ou `engine-error` (panne, pas un contenu).\n\n**3. Vrai positif ou faux positif ?** Le détail par personne n'est pas dans les métriques (cardinalité) mais dans les journaux de l'adaptateur, jamais le contenu du prompt :\n\n`kubectl -n agentgateway-system logs -l app.kubernetes.io/name=guardrail-adapter --prefix --since=1h | grep \"decision=reject\" | grep \"team=<équipe>\"`\n\n**4. Adapter pour une seule application / un seul agent, sans toucher aux autres :**\n- *un profil dédié* : copier `guardrails/deploy/rails/default` vers un nouveau profil, ajuster `config.yml`, le monter dans le Deployment, puis l'attribuer à la route de l'application (`x-guardrail-profile` dans `guardrail-policies.yaml`) ;\n- *une route dédiée* à l'application, ciblée par sa propre `AgentgatewayPolicy` (ne pas la cibler aussi depuis `garde-fous-llm`) ;\n- *messages d'outils* (agents MCP) : `TOOL_RAILS=secrets` (défaut) ou `profile` ;\n- ne jamais assouplir `default` pour une seule équipe : cela l'assouplit pour toutes.\n\n**5. Vérifier** : le taux de blocage de l'équipe baisse, les autres équipes ne bougent pas, les erreurs du moteur restent à 0.\n\n*Colonne Équipe à « - » :* la passerelle n'a pas transmis l'en-tête `x-team` (expression CEL `apiKey.team` à valider dans les en-têtes du webhook, cf. guardrails/README.md)."
+      }
+    }
+  ]
+}

@@ -120,11 +120,23 @@ Consequences for this platform:
   Azure-hosted ones offer Global Standard and Data Zone Standard **US** only —
   no EU data zone.
 
+## Observability — who triggers which rule
+
+The adapter exposes `guardrail_adapter_decisions_total{direction,action,rail,profile,team,model}`
+(`team` ← `x-team`, `model` ← `x-model`, both set by the webhook policy and bounded to 64 characters),
+`guardrail_adapter_errors_total` and `guardrail_adapter_check_duration_seconds`. Every non-`pass`
+decision (and every engine failure) also writes one log line with the caller (`user`, from `x-user`)
+and no prompt content: per-person detail lives in the logs, not in metric labels.
+The Grafana dashboard « Garde-fous » (`monitoring/`) reads them; use it to decide whether to adapt the
+rails for one application or agent (dedicated profile or route) rather than loosen `default` for everyone.
+Header names: `TEAM_HEADER`, `USER_HEADER`, `MODEL_HEADER`.
+
 ## Known limitations — validate before the demo
 
 - Streaming: agentgateway calls `/response` per buffered chunk; masking in streaming mode is not applied by the gateway's native guards (use Reject).
 - NetworkPolicies assume proxy pods carry the `gateway.networking.k8s.io/gateway-name` label.
 - Microservice mode: the `status` values of a blocked check and the ConfigMap layout expected by `configStore.configMap` are not documented; the mapping is defensive. Only `success`/`passed` pass and `blocked`/`failure`/`failed`/`error` block: a rail reported as `skipped`, or a missing `status`, is treated as an engine failure — with `FAIL_MODE=closed` **every** request is refused, with an explicit `microservice guardrail status skipped|missing|unknown … FAIL_MODE applies` error in the adapter logs. VÉRIFIER (D-7) sur une instance réelle : which statuses the microservice actually returns (does it emit `skipped` for rails not applicable to the direction?).
+- `x-team: default(apiKey.team, "collaborateurs")` in the webhook headers reuses the CEL expression of `gateway/deploy/metrics.yaml`: whether `apiKey` is evaluated in webhook headers is untested (VÉRIFIER D-7). If not, the `team` label stays `-` and the dashboard falls back to its gateway view (403 per route × team × user).
 - The workload identity of the deployer-created proxy pods (for `auth.azure.workloadIdentity`) must be bound to the `agentgateway` managed identity.
 - `llm-assistant-groupe` in `guardrail-policies.yaml` is an **inert example**: no HTTPRoute of that name exists in this repo, so the `guardrails-strict` policy attaches to nothing and no route uses the strict profile today. To move an existing route to strict, switch its `x-guardrail-profile` in `garde-fous-llm` (do not target it from both policies). Whether the LLM self-check fits in the 3 s webhook timeout under load: VÉRIFIER (D-7).
 - Regexes are a first line of defence, not a DLP: case-insensitive and tolerant of space / dot / dash separators, they still miss encoded, split or paraphrased data. Text is normalised before matching (NFKC — fullwidth digits, exotic spaces — and zero-width characters U+200B-U+200D, U+2060, U+FEFF, U+00AD removed). Request bodies above `MAX_BODY_BYTES` (default 1 MiB) get a 413 before parsing.

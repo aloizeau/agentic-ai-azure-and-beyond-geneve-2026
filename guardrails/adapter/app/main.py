@@ -36,7 +36,7 @@ log = logging.getLogger("guardrail-adapter")
 DECISIONS = Counter(
     "guardrail_adapter_decisions_total",
     "Decisions returned to the gateway.",
-    ["direction", "action", "rail", "profile"],
+    ["direction", "action", "rail", "profile", "team", "model"],
 )
 ERRORS = Counter("guardrail_adapter_errors_total", "Rail engine failures.", ["direction", "profile"])
 LATENCY = Histogram(
@@ -171,8 +171,20 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
         finally:
             LATENCY.labels(direction.value, req.app.state.backend.name).observe(time.perf_counter() - t0)
 
+    def label_of(req: Request, header: str) -> str:
+        # Libellé Prometheus : borné en longueur, jamais vide. Les valeurs viennent de la
+        # passerelle (CEL), pas du client — mais un en-tête absent ne doit rien casser.
+        return (req.headers.get(header) or "-").strip()[:64] or "-"
+
     def decide(direction: Direction, action: str, rail: str | None, req: Request) -> None:
-        DECISIONS.labels(direction.value, action, rail or "-", profile_of(req)).inc()
+        team, model = label_of(req, s.team_header), label_of(req, s.model_header)
+        DECISIONS.labels(direction.value, action, rail or "-", profile_of(req), team, model).inc()
+        # Une ligne par déclenchement : le détail par personne (`user`) vit ici, pas dans
+        # les métriques (cardinalité). Jamais le contenu du prompt.
+        if action != "pass" or rail == "engine-error":
+            log.info("decision=%s direction=%s rail=%s profile=%s team=%s user=%s model=%s",
+                     action, direction.value, rail or "-", profile_of(req), team,
+                     label_of(req, s.user_header), model)
 
     # --------------------------------------------------------------- /request
     @app.post("/request")
@@ -311,4 +323,7 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
 
 
 # ASGI entrypoint for uvicorn: `uvicorn app.main:app`
+# uvicorn ne configure que ses propres journaux : sans ceci, les lignes INFO de
+# l'adaptateur (démarrage, décisions) seraient perdues.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 app = create_app()

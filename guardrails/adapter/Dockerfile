@@ -2,15 +2,17 @@
 # VÉRIFIER : épingler par digest (python:3.12-slim@sha256:…) — digest non résolu, registre inaccessible lors de l'audit.
 FROM python:3.12-slim AS base
 
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    PIP_ROOT_USER_ACTION=ignore PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
 COPY requirements.txt .
-RUN pip install -r requirements.txt && apt-get purge -y build-essential && apt-get autoremove -y
+RUN pip install -r requirements.txt && DEBIAN_FRONTEND=noninteractive apt-get purge -y build-essential \
+ && DEBIAN_FRONTEND=noninteractive apt-get autoremove -y
 
 COPY app ./app
 

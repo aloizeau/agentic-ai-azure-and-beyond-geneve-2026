@@ -42,6 +42,10 @@ spec:
                 x-guardrail-profile: '"default"'   # CEL string literal: rail profile for this route
                 x-user: jwt.sub                    # identity for the adapter's logs
                 x-model: llmRequest.model
+                # Équipe de l'agent (clé virtuelle) ou « collaborateurs » (personnes) : même
+                # expression que gateway/deploy/metrics.yaml. Libellé `team` du dashboard
+                # « Garde-fous ». VÉRIFIER (D-7) : apiKey est-il évalué dans les en-têtes du webhook ?
+                x-team: 'default(apiKey.team, "collaborateurs")'
         response:
           - webhook:
               backendRef:
@@ -51,6 +55,8 @@ spec:
               failureMode: FailClosed
               headers:
                 x-guardrail-profile: '"default"'
+                x-user: jwt.sub
+                x-team: 'default(apiKey.team, "collaborateurs")'   # VÉRIFIER (D-7), comme sur /request
 ---
 # A stricter profile for a route exposed to broader audiences (e.g. the
 # company-wide assistant): same adapter, "strict" rails incl. LLM self-checks.
@@ -82,12 +88,15 @@ spec:
               headers:
                 x-guardrail-profile: '"strict"'
                 x-user: jwt.sub
+                x-team: 'default(apiKey.team, "collaborateurs")'
         response:
           - webhook:
               backendRef: { kind: Service, name: guardrail-adapter, port: 8080 }
               failureMode: FailClosed
               headers:
                 x-guardrail-profile: '"strict"'
+                x-user: jwt.sub
+                x-team: 'default(apiKey.team, "collaborateurs")'
 ---
 # The webhook has no deadline of its own: without this, a slow engine stalls
 # every LLM call. On expiry the webhook counts as unavailable => failureMode.

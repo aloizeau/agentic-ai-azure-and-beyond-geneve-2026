@@ -310,6 +310,17 @@ def test_ready_and_metrics(client):
     assert 'action="reject"' in m
 
 
+def test_decision_metric_carries_team_and_model(client):
+    # Dashboard « Garde-fous » : qui déclenche quoi se lit sur les libellés team / model.
+    r = client.post("/request", json=prompt(("user", "ma clé sk-proj-AbCdEfGhIjKlMnOpQrStUvWx123456")),
+                    headers={"x-team": "equipe-docs", "x-model": "gpt-test", "x-user": "alice"})
+    assert r.status_code == 200
+    m = client.get("/metrics").text
+    line = next(l for l in m.splitlines() if l.startswith("guardrail_adapter_decisions_total{") and 'team="equipe-docs"' in l)
+    assert 'action="reject"' in line and 'model="gpt-test"' in line
+    assert "alice" not in m          # la personne n'est jamais un libellé (cardinalité)
+
+
 # The exact prompts of demos/C-nemo-guardrails/run.ps1 — the demo must not drift from the rails.
 @pytest.mark.parametrize("text", [
     "Peux-tu vérifier pourquoi cette clé ne marche pas : sk-proj-AbCdEfGhIjKlMnOpQrStUvWx123456 ?",
