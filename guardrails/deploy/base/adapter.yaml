@@ -32,6 +32,7 @@ spec:
             - { name: DEFAULT_PROFILE, value: default }
             - { name: FAIL_MODE, value: closed }     # engine error => reject
             - { name: TOOL_RAILS, value: secrets }   # messages tool : secrets seulement (README, limites)
+            - { name: LOG_BLOCKED_CONTENT, value: "true" }   # une ligne JSON par blocage, texte MASQUÉ (dashboard Garde-fous)
             - { name: HOME, value: /tmp }            # NeMo caches under $HOME
           readinessProbe:
             httpGet: { path: /readyz, port: http }

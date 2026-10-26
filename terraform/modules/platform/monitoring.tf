@@ -42,6 +42,7 @@ resource "kubernetes_config_map" "dashboard_guardrails" {
   }
 
   data = {
-    "garde-fous.json" = file("${path.root}/../monitoring/dashboards/garde-fous.json")
+    # The "Messages bloqués" table queries this workspace (placeholder filled here).
+    "garde-fous.json" = replace(file("${path.root}/../monitoring/dashboards/garde-fous.json"), "__LOG_ANALYTICS_WORKSPACE_ID__", var.log_analytics_workspace_id)
   }
 }

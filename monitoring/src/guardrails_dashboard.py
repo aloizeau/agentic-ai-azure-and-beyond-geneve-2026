@@ -22,6 +22,29 @@ from usage_dashboard import DS, bargauge, panel, pie, row, stat, table, target, 
 
 OUT = pathlib.Path(__file__).resolve().parents[1] / "dashboards" / "garde-fous.json"
 
+# Source des messages bloqués : journaux de l'adaptateur dans Log Analytics (ContainerLogV2),
+# lus par la source Azure Monitor que Terraform déclare dans Grafana (uid ci-dessous).
+# Terraform remplace __LOG_ANALYTICS_WORKSPACE_ID__ par l'identifiant du workspace.
+AZ = {"type": "grafana-azure-monitor-datasource", "uid": "azure-loganalytics"}
+WORKSPACE = "__LOG_ANALYTICS_WORKSPACE_ID__"
+BLOCKED_KQL = "\n".join([
+    "ContainerLogV2",
+    '| where PodNamespace == "agentgateway-system" and PodName startswith "guardrail-adapter"',
+    "| where $__timeFilter(TimeGenerated)",
+    "| extend m = parse_json(tostring(LogMessage))",
+    '| where tostring(m.event) == "guardrail_block"',
+    '| where tostring(m.team) matches regex "^${equipe:regex}$" and tostring(m.profile) matches regex "^${profil:regex}$"',
+    '    and tostring(m.source) matches regex "^${source:regex}$" and tostring(m.direction) matches regex "^${direction:regex}$"',
+    '    and tostring(m.rail) matches regex "^${regle:regex}$"',
+    "| project Heure = TimeGenerated, Décision = tostring(m.decision), Sens = tostring(m.direction),",
+    "    Mécanisme = tostring(m.source), Règle = tostring(m.rail), Équipe = tostring(m.team),",
+    "    Utilisateur = tostring(m.user), Profil = tostring(m.profile), Modèle = tostring(m.model),",
+    '    Concerné = iff(isempty(tostring(m.where)), "message utilisateur", tostring(m.where)),',
+    "    Message = tostring(m.preview)",
+    "| order by Heure desc",
+    "| take 200",
+])
+
 DEC = "guardrail_adapter_decisions_total"
 ERR = "guardrail_adapter_errors_total"
 DUR = "guardrail_adapter_check_duration_seconds"
@@ -83,6 +106,25 @@ def build():
                         description="Un changement de mécanisme (ex. nemo-regex qui monte alors que adapter reste stable) oriente l'analyse : "
                                     "règle YAML du profil ou contrôle Python de l'adaptateur."))
     y += 7
+
+    # --------------------------------------------------------------- blocked messages
+    p.append(row("Messages bloqués — ce que l'utilisateur a demandé (texte masqué)", y)); y += 1
+    blocked = panel(
+        "table", "Derniers messages bloqués ou masqués", 0, y, 24, 12,
+        [{"datasource": AZ, "refId": "A", "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {"query": BLOCKED_KQL, "resources": [WORKSPACE], "resultFormat": "table"}}],
+        "Une ligne par refus ou masquage, avec le mécanisme et la règle qui ont décidé, l'équipe, l'utilisateur et le début du message. "
+        "Le texte est MASQUÉ avant d'être écrit (secrets → [SECRET], suites de 6 chiffres ou plus → [NUM], jetons opaques → [JETON]) "
+        "et tronqué à 300 caractères : la donnée qui a déclenché la règle n'est jamais recopiée. "
+        "Source : journaux de l'adaptateur dans Log Analytics (quelques minutes de délai d'ingestion), actif si LOG_BLOCKED_CONTENT=true.",
+        defaults={"custom": {"align": "auto", "filterable": True, "cellOptions": {"type": "auto", "wrapText": True}}},
+        overrides=[{"matcher": {"id": "byName", "options": "Message"}, "properties": [{"id": "custom.width", "value": 520}]},
+                   {"matcher": {"id": "byName", "options": "Heure"}, "properties": [{"id": "unit", "value": "dateTimeAsLocal"}, {"id": "custom.width", "value": 170}]}],
+        options={"showHeader": True, "cellHeight": "md", "sortBy": [{"displayName": "Heure", "desc": True}]},
+    )
+    blocked["datasource"] = AZ          # panneau lu dans Log Analytics, pas dans Prometheus
+    p.append(blocked)
+    y += 12
 
     # ----------------------------------------------------------- who triggers what
     p.append(row("Qui déclenche quoi — où faut-il adapter ?", y)); y += 1

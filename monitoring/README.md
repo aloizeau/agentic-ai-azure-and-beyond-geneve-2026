@@ -66,6 +66,7 @@ guardrail, and should it be adapted for one application or agent?*
 | Vue d'ensemble | checks, rejects, masks, block ratio, engine errors, p95 latency | `guardrail_adapter_decisions_total`, `guardrail_adapter_errors_total`, `guardrail_adapter_check_duration_seconds` |
 | Qui a arrêté la requête | pie and table by mechanism (`adapter` Python checks, `nemo-regex`, `nemo-injection`, `nemo-llm`, `moteur`) × rule, plus the gateway's own layer 1 | `guardrail_adapter_decisions_total{source,rail}`, `agentgateway_guardrail_checks_total` |
 | Qui déclenche quoi | table team × rule × profile × direction, top rules, block ratio per team, per model, per minute | `guardrail_adapter_decisions_total{direction,action,rail,profile,team,model,source}` |
+| Messages bloqués | table of the last blocked / masked messages: time, decision, mechanism, rule, team, user, profile, model, which message, **masked text** | adapter logs in Log Analytics (`ContainerLogV2`), Azure Monitor data source |
 | Vue passerelle | 403 / 5xx on LLM routes per route × team × user, gateway guardrail checks | `agentgateway_requests_total`, `agentgateway_guardrail_checks_total` |
 | Santé du moteur | engine errors, latency p50/p95/p99, adapter replicas | adapter metrics |
 | Comment s'en servir | reading guide and the ways to adapt rails for one application | — |
@@ -73,6 +74,17 @@ guardrail, and should it be adapted for one application or agent?*
 `team` on the adapter metrics comes from the `x-team` header set by the webhook policy (`guardrails/deploy/gateway/guardrail-policies.yaml`,
 same expression as `metrics.yaml`); `model` from `x-model`. Per-person detail is **not** a label (cardinality): each reject / mask / engine
 error is one log line of the adapter (`decision=… rail=… profile=… team=… user=… model=…`, never the prompt).
+### Blocked messages table
+
+Prometheus holds no text, so the table reads the adapter's logs: with `LOG_BLOCKED_CONTENT=true` (set in `guardrails/deploy/base/adapter.yaml`)
+each reject / mask writes one JSON line (`event=guardrail_block`, decision, mechanism, rule, team, user, model and a **masked, truncated preview**).
+AKS already ships container logs to Log Analytics; Grafana reads them through an Azure Monitor data source (uid `azure-loganalytics`, Terraform:
+`grafana` workload identity with *Log Analytics Reader* on the workspace, no secret). The preview hides what triggered the rule: secrets → `[SECRET]`,
+runs of 6+ digits (card, NIR, IBAN, phone) → `[NUM]`, opaque tokens of 24+ characters → `[JETON]`, 300 characters at most (`BLOCKED_PREVIEW_CHARS`).
+Masking is deliberately broad but is **not a guarantee**: free text can still be personal ("Mon patient Jean Dupont…"). Treat the table as sensitive:
+Grafana here allows anonymous Viewer access (`auth.anonymous` in `main.tf`, demo only) — restrict the dashboard (or set `LOG_BLOCKED_CONTENT=false`)
+outside a throwaway cluster. Needs Grafana ≥ 10.3 for workload identity (`azure.workload_identity_enabled`); ingestion delay: a few minutes.
+
 If the `Équipe` column shows `-`, the gateway did not pass `x-team` (the CEL `apiKey.team` in webhook headers is to be validated, D-7).
 
 ## Per-user labels and cardinality

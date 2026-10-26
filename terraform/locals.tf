@@ -26,6 +26,7 @@ locals {
     foundry_user            = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
     acr_pull                = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
     network_contributor     = "4d97b98b-1d4f-4787-a291-c67834d212e7"
+    log_analytics_reader    = "73c42c96-874c-492b-b04d-ab87d138a893"
   }
 }
 

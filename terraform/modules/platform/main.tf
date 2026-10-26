@@ -149,6 +149,23 @@ resource "helm_release" "kube_prometheus_stack" {
   values = concat([yamlencode({
     grafana = {
       adminPassword = random_password.grafana.result
+      # Workload identity: Grafana queries Log Analytics (Azure Monitor data source below)
+      # with the `grafana` identity (Log Analytics Reader on the workspace), no secret.
+      serviceAccount = {
+        annotations = {
+          "azure.workload.identity/client-id" = var.workload_identity_client_ids["grafana"]
+          "azure.workload.identity/tenant-id" = var.tenant_id
+        }
+      }
+      podLabels = { "azure.workload.identity/use" = "true" }
+      additionalDataSources = [{
+        name     = "Journaux (Log Analytics)"
+        uid      = "azure-loganalytics" # referenced by monitoring/dashboards/garde-fous.json
+        type     = "grafana-azure-monitor-datasource"
+        access   = "proxy"
+        editable = false
+        jsonData = { azureAuthType = "workloadidentity", cloudName = "azuremonitor", tenantId = var.tenant_id }
+      }]
       # Standard SSD (non-premium) so the DB — dashboards, users, MCP service
       # account token — survives a pod restart.
       persistence = {
@@ -170,6 +187,8 @@ resource "helm_release" "kube_prometheus_stack" {
         # Demo convenience only: never do this outside a throwaway cluster.
         # When public, Grafana is only reachable through oauth2-proxy (Entra ID).
         "auth.anonymous" = { enabled = true, org_role = "Viewer" }
+        # Needed by the Azure Monitor data source's workloadidentity auth (Grafana >= 10.3).
+        azure = { workload_identity_enabled = true }
       }
     }
     prometheus = {

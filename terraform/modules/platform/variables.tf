@@ -2,6 +2,10 @@ variable "chart_versions" { type = map(string) }
 variable "foundry_endpoint" { type = string }
 variable "model_deployments" { type = map(string) }
 variable "workload_identity_client_ids" { type = map(string) }
+variable "log_analytics_workspace_id" {
+  type        = string
+  description = "Log Analytics workspace (resource ID): source of the guardrail block log shown in Grafana."
+}
 variable "tenant_id" { type = string }
 variable "entra_issuer" { type = string }
 variable "entra_jwks_uri" { type = string }

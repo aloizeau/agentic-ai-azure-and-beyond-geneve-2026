@@ -117,6 +117,24 @@ SECRET_PATTERNS: tuple[str, ...] = (
 _SECRETS = tuple(re.compile(p) for p in SECRET_PATTERNS)
 
 
+# Aperçu d'un message bloqué pour le tableau de supervision : la donnée sensible
+# détectée ne doit pas être recopiée dans les journaux. On masque large (mieux
+# vaut trop que pas assez) : secrets connus, suites de 6 chiffres ou plus (carte,
+# NIR, IBAN, téléphone), et tout jeton opaque de 24 caractères ou plus.
+_PREVIEW_DIGITS = re.compile(r"[0-9](?:[\s.\-_/]?[0-9]){5,}")
+_PREVIEW_TOKEN = re.compile(r"\b[A-Za-z0-9_\-]{24,}\b")
+
+
+def mask_sensitive(text: str, limit: int = 300) -> str:
+    t = normalize(text)
+    for p in _SECRETS:
+        t = p.sub("[SECRET]", t)
+    t = _PREVIEW_DIGITS.sub("[NUM]", t)
+    t = _PREVIEW_TOKEN.sub("[JETON]", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t if len(t) <= limit else t[:limit] + "…"
+
+
 def find_secret(text: str) -> bool:
     t = normalize(text)
     return any(p.search(t) for p in _SECRETS)

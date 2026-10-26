@@ -130,6 +130,10 @@ and no prompt content: per-person detail lives in the logs, not in metric labels
 The Grafana dashboard « Garde-fous » (`monitoring/`) reads them; use it to decide whether to adapt the
 rails for one application or agent (dedicated profile or route) rather than loosen `default` for everyone.
 `source` says which mechanism decided: `adapter` (Python checks in `app/dlp.py`), `nemo-regex`, `nemo-injection` (YARA), `nemo-llm` (self checks) or `moteur` (engine failure); it is derived from NeMo's rail name (`source_of` in `app/main.py`, VÉRIFIER D-7: unknown names fall into `nemo-autre`). Layer 1 (the gateway's native regex) never reaches the adapter and is counted by `agentgateway_guardrail_checks_total`.
+With `LOG_BLOCKED_CONTENT=true` (default `false` in code, `true` in `deploy/base/adapter.yaml`) each reject / mask also writes one JSON line on the
+`guardrail-adapter.blocked` logger — decision, mechanism, rule, team, user, model, which message, and a **masked, truncated preview** (`dlp.mask_sensitive`:
+secrets, runs of 6+ digits and opaque tokens are replaced; `BLOCKED_PREVIEW_CHARS`, default 300). The Grafana table « Messages bloqués » reads it from Log Analytics.
+Masking is best-effort: free text may still contain personal data, so restrict access to that dashboard.
 Header names: `TEAM_HEADER`, `USER_HEADER`, `MODEL_HEADER`.
 
 ## Known limitations — validate before the demo

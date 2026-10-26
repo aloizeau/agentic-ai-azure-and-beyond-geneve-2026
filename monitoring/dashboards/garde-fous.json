@@ -911,7 +911,7 @@
     {
       "id": 13,
       "type": "row",
-      "title": "Qui déclenche quoi — où faut-il adapter ?",
+      "title": "Messages bloqués — ce que l'utilisateur a demandé (texte masqué)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -924,6 +924,104 @@
     {
       "id": 14,
       "type": "table",
+      "title": "Derniers messages bloqués ou masqués",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "azure-loganalytics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "azure-loganalytics"
+          },
+          "refId": "A",
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "query": "ContainerLogV2\n| where PodNamespace == \"agentgateway-system\" and PodName startswith \"guardrail-adapter\"\n| where $__timeFilter(TimeGenerated)\n| extend m = parse_json(tostring(LogMessage))\n| where tostring(m.event) == \"guardrail_block\"\n| where tostring(m.team) matches regex \"^${equipe:regex}$\" and tostring(m.profile) matches regex \"^${profil:regex}$\"\n    and tostring(m.source) matches regex \"^${source:regex}$\" and tostring(m.direction) matches regex \"^${direction:regex}$\"\n    and tostring(m.rail) matches regex \"^${regle:regex}$\"\n| project Heure = TimeGenerated, Décision = tostring(m.decision), Sens = tostring(m.direction),\n    Mécanisme = tostring(m.source), Règle = tostring(m.rail), Équipe = tostring(m.team),\n    Utilisateur = tostring(m.user), Profil = tostring(m.profile), Modèle = tostring(m.model),\n    Concerné = iff(isempty(tostring(m.where)), \"message utilisateur\", tostring(m.where)),\n    Message = tostring(m.preview)\n| order by Heure desc\n| take 200",
+            "resources": [
+              "__LOG_ANALYTICS_WORKSPACE_ID__"
+            ],
+            "resultFormat": "table"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true,
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Message"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 520
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Heure"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md",
+        "sortBy": [
+          {
+            "displayName": "Heure",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Une ligne par refus ou masquage, avec le mécanisme et la règle qui ont décidé, l'équipe, l'utilisateur et le début du message. Le texte est MASQUÉ avant d'être écrit (secrets → [SECRET], suites de 6 chiffres ou plus → [NUM], jetons opaques → [JETON]) et tronqué à 300 caractères : la donnée qui a déclenché la règle n'est jamais recopiée. Source : journaux de l'adaptateur dans Log Analytics (quelques minutes de délai d'ingestion), actif si LOG_BLOCKED_CONTENT=true."
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Qui déclenche quoi — où faut-il adapter ?",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "table",
       "title": "Déclenchements par équipe × mécanisme × règle × profil",
       "datasource": {
         "type": "prometheus",
@@ -931,7 +1029,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 23,
+        "y": 36,
         "w": 16,
         "h": 11
       },
@@ -1072,7 +1170,7 @@
       ]
     },
     {
-      "id": 15,
+      "id": 17,
       "type": "bargauge",
       "title": "Top règles déclenchées",
       "datasource": {
@@ -1081,7 +1179,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 23,
+        "y": 36,
         "w": 8,
         "h": 11
       },
@@ -1129,7 +1227,7 @@
       "description": "Règle de l'adaptateur ou de NeMo qui a refusé / masqué. « engine-error » = panne du moteur, pas une règle de contenu."
     },
     {
-      "id": 16,
+      "id": 18,
       "type": "table",
       "title": "Taux de blocage par équipe",
       "datasource": {
@@ -1138,7 +1236,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 47,
         "w": 12,
         "h": 8
       },
@@ -1307,7 +1405,7 @@
       ]
     },
     {
-      "id": 17,
+      "id": 19,
       "type": "bargauge",
       "title": "Refus + masquages par modèle",
       "datasource": {
@@ -1316,7 +1414,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 34,
+        "y": 47,
         "w": 6,
         "h": 8
       },
@@ -1364,7 +1462,7 @@
       "description": "Modèle demandé par le client (en-tête x-model). Utile pour repérer un déploiement ou un agent qui change de comportement."
     },
     {
-      "id": 18,
+      "id": 20,
       "type": "piechart",
       "title": "Décisions par action",
       "datasource": {
@@ -1373,7 +1471,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 34,
+        "y": 47,
         "w": 6,
         "h": 8
       },
@@ -1427,7 +1525,7 @@
       "description": "pass = laissé passer, reject = refusé, mask = réécrit."
     },
     {
-      "id": 19,
+      "id": 21,
       "type": "timeseries",
       "title": "Refus + masquages par minute, par règle",
       "datasource": {
@@ -1436,7 +1534,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 42,
+        "y": 55,
         "w": 12,
         "h": 8
       },
@@ -1488,7 +1586,7 @@
       "description": "Un pic sur UNE règle = une nouvelle source de données sensibles (ou un faux positif après un changement de prompt)."
     },
     {
-      "id": 20,
+      "id": 22,
       "type": "timeseries",
       "title": "Refus + masquages par minute, par équipe",
       "datasource": {
@@ -1497,7 +1595,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 42,
+        "y": 55,
         "w": 12,
         "h": 8
       },
@@ -1549,20 +1647,20 @@
       "description": "Un pic sur UNE équipe = un agent ou une application à regarder."
     },
     {
-      "id": 21,
+      "id": 23,
       "type": "row",
       "title": "Vue passerelle — qui, sur quelle route (indépendant de l'adaptateur)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 50,
+        "y": 63,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 22,
+      "id": 24,
       "type": "table",
       "title": "Refus 403 sur les routes LLM, par route × équipe × utilisateur",
       "datasource": {
@@ -1571,7 +1669,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 64,
         "w": 24,
         "h": 9
       },
@@ -1708,20 +1806,20 @@
       ]
     },
     {
-      "id": 23,
+      "id": 25,
       "type": "row",
       "title": "Santé du moteur de règles",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 60,
+        "y": 73,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 24,
+      "id": 26,
       "type": "timeseries",
       "title": "Erreurs du moteur par minute",
       "datasource": {
@@ -1730,7 +1828,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 61,
+        "y": 74,
         "w": 8,
         "h": 8
       },
@@ -1782,7 +1880,7 @@
       "description": "Toute valeur > 0 est une requête refusée en 503 (fail-closed). Alerte GuardrailEngineFailing."
     },
     {
-      "id": 25,
+      "id": 27,
       "type": "timeseries",
       "title": "Latence du moteur (p50 / p95 / p99)",
       "datasource": {
@@ -1791,7 +1889,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 61,
+        "y": 74,
         "w": 10,
         "h": 8
       },
@@ -1861,7 +1959,7 @@
       "description": "Profil default : quelques ms. Profil strict (auto-contrôles LLM) : proche du délai de 3 s ? Alerte GuardrailLatencyHigh."
     },
     {
-      "id": 26,
+      "id": 28,
       "type": "stat",
       "title": "Réplicas qui exposent des métriques",
       "datasource": {
@@ -1870,7 +1968,7 @@
       },
       "gridPos": {
         "x": 18,
-        "y": 61,
+        "y": 74,
         "w": 6,
         "h": 8
       },
@@ -1931,20 +2029,20 @@
       "description": "Attendu : 2 (Deployment guardrail-adapter). 0 = adaptateur absent : le webhook FailClosed refuse tout le trafic LLM."
     },
     {
-      "id": 27,
+      "id": 29,
       "type": "row",
       "title": "Comment s'en servir",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 69,
+        "y": 82,
         "w": 24,
         "h": 1
       },
       "panels": []
     },
     {
-      "id": 28,
+      "id": 30,
       "type": "text",
       "title": "Un garde-fou gêne une application ou un agent : que faire ?",
       "datasource": {
@@ -1953,7 +2051,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 83,
         "w": 24,
         "h": 11
       },

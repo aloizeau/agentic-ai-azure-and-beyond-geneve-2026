@@ -74,6 +74,8 @@ module "identity" {
     {
       agentgateway = { namespace = "agentgateway-system", service_account = "agentgateway-proxy" }
       kagent       = { namespace = "kagent", service_account = "kagent" }
+      # Grafana reads the guardrail block log (Log Analytics) with no secret.
+      grafana = { namespace = "monitoring", service_account = "kps-grafana" }
     },
     var.public_exposure == null ? {} : {
       agentgateway-public = { namespace = "agentgateway-system", service_account = "agentgateway-public" }
@@ -88,6 +90,11 @@ module "identity" {
         workload           = "agentgateway"
         scope              = module.ai.foundry_account_id
         role_definition_id = local.role_ids.cognitive_services_user
+      }
+      "grafana-logs" = {
+        workload           = "grafana"
+        scope              = module.foundation.log_analytics_workspace_id
+        role_definition_id = local.role_ids.log_analytics_reader
       }
     },
     var.public_exposure == null ? {} : {
@@ -119,6 +126,7 @@ module "platform" {
   foundry_endpoint  = module.ai.openai_v1_endpoint
   model_deployments = { for k, v in var.model_deployments : k => v.sku_name if v.enabled }
 
+  log_analytics_workspace_id   = module.foundation.log_analytics_workspace_id
   workload_identity_client_ids = module.identity.workload_identity_client_ids
   tenant_id                    = data.azurerm_client_config.current.tenant_id
 

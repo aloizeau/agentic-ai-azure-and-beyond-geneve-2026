@@ -45,6 +45,11 @@ class Settings:
     team_header: str = field(default_factory=lambda: _env("TEAM_HEADER", "x-team"))
     user_header: str = field(default_factory=lambda: _env("USER_HEADER", "x-user"))
     model_header: str = field(default_factory=lambda: _env("MODEL_HEADER", "x-model"))
+    # Une ligne JSON par message bloque/masque (logger `guardrail-adapter.blocked`), lue par le
+    # tableau « Messages bloques » du dashboard Garde-fous (Log Analytics). Le texte est MASQUE
+    # (dlp.mask_sensitive : secrets, nombres, jetons) et tronque. Desactive par defaut.
+    log_blocked_content: bool = field(default_factory=lambda: _env("LOG_BLOCKED_CONTENT", "false").lower() == "true")
+    blocked_preview_chars: int = field(default_factory=lambda: int(_env("BLOCKED_PREVIEW_CHARS", "300")))
     # Taille maximale d'un corps de requête (octets), refusée en 413 avant tout
     # parsing JSON : un corps géant ne doit pas épuiser la mémoire du pod.
     max_body_bytes: int = field(default_factory=lambda: int(_env("MAX_BODY_BYTES", str(1024 * 1024))))

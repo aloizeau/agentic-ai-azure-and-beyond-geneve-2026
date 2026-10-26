@@ -332,6 +332,35 @@ def test_decision_metric_carries_team_and_model(client):
     assert "alice" not in m          # la personne n'est jamais un libellé (cardinalité)
 
 
+def test_mask_sensitive_hides_what_was_detected():
+    from app import dlp
+    m = dlp.mask_sensitive("clé sk-proj-AbCdEfGhIjKlMnOpQrStUvWx123456, carte 4111 1111 1111 1111, NIR 1 85 05 78 006 084 36", 300)
+    assert "sk-proj" not in m and "4111" not in m and "006 084" not in m
+    assert "[SECRET]" in m and "[NUM]" in m
+    assert len(dlp.mask_sensitive("a " * 500, 50)) <= 51
+
+
+def test_blocked_message_is_logged_masked(rails_root, caplog):
+    import json, logging
+    secret = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWx123456"
+    with TestClient(create_app(Settings(rails_root=str(rails_root), log_blocked_content=True))) as c:
+        with caplog.at_level(logging.INFO, logger="guardrail-adapter.blocked"):
+            r = c.post("/request", json=prompt(("user", f"vérifie cette clé {secret}")),
+                       headers={"x-team": "equipe-docs", "x-user": "alice", "x-model": "gpt-test"})
+    assert r.status_code == 200
+    rec = [json.loads(x.getMessage()) for x in caplog.records if x.name == "guardrail-adapter.blocked"]
+    assert len(rec) == 1 and rec[0]["event"] == "guardrail_block" and rec[0]["decision"] == "reject"
+    assert rec[0]["team"] == "equipe-docs" and rec[0]["user"] == "alice" and rec[0]["source"]
+    assert secret not in rec[0]["preview"] and "vérifie cette clé" in rec[0]["preview"]
+
+
+def test_blocked_message_not_logged_by_default(client, caplog):
+    import logging
+    with caplog.at_level(logging.INFO, logger="guardrail-adapter.blocked"):
+        client.post("/request", json=prompt(("user", "clé sk-proj-AbCdEfGhIjKlMnOpQrStUvWx123456")))
+    assert not [x for x in caplog.records if x.name == "guardrail-adapter.blocked"]
+
+
 # The exact prompts of demos/C-nemo-guardrails/run.ps1 — the demo must not drift from the rails.
 @pytest.mark.parametrize("text", [
     "Peux-tu vérifier pourquoi cette clé ne marche pas : sk-proj-AbCdEfGhIjKlMnOpQrStUvWx123456 ?",

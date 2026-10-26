@@ -9,6 +9,7 @@ always answers HTTP 200; a Reject is expressed by `status_code` in the body.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -32,6 +33,8 @@ from .backends import (
 from .settings import Settings
 
 log = logging.getLogger("guardrail-adapter")
+# Un blocage = une ligne JSON (voir Settings.log_blocked_content), sans autre habillage.
+blocked_log = logging.getLogger("guardrail-adapter.blocked")
 
 DECISIONS = Counter(
     "guardrail_adapter_decisions_total",
@@ -202,7 +205,8 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
         # passerelle (CEL), pas du client — mais un en-tête absent ne doit rien casser.
         return (req.headers.get(header) or "-").strip()[:64] or "-"
 
-    def decide(direction: Direction, action: str, rail: str | None, req: Request) -> None:
+    def decide(direction: Direction, action: str, rail: str | None, req: Request,
+               text: str | None = None, where: str = "") -> None:
         team, model = label_of(req, s.team_header), label_of(req, s.model_header)
         source = source_of(rail)
         DECISIONS.labels(direction.value, action, rail or "-", profile_of(req), team, model, source).inc()
@@ -212,6 +216,13 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
             log.info("decision=%s direction=%s source=%s rail=%s profile=%s team=%s user=%s model=%s",
                      action, direction.value, source, rail or "-", profile_of(req), team,
                      label_of(req, s.user_header), model)
+        if text is not None and action != "pass" and s.log_blocked_content:
+            blocked_log.info(json.dumps({
+                "event": "guardrail_block", "decision": action, "direction": direction.value,
+                "source": source, "rail": rail or "-", "profile": profile_of(req), "team": team,
+                "user": label_of(req, s.user_header), "model": model, "where": where.strip(" ()"),
+                "preview": dlp.mask_sensitive(text, s.blocked_preview_chars),
+            }, ensure_ascii=False))
 
     # --------------------------------------------------------------- /request
     @app.post("/request")
@@ -222,8 +233,8 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
             decide(Direction.INPUT, "pass", None, req)
             return {"action": {"reason": "no user message to check"}}
 
-        def reject(rail: str, where: str = "", source: str = "NeMo rail") -> dict[str, Any]:
-            decide(Direction.INPUT, "reject", rail, req)
+        def reject(rail: str, where: str = "", source: str = "NeMo rail", idx: int | None = None) -> dict[str, Any]:
+            decide(Direction.INPUT, "reject", rail, req, msgs[user_idx if idx is None else idx]["content"], where)
             return {"action": {"status_code": s.reject_status, "body": refusal(rail),
                                "reason": f"blocked by {source}: {rail}{where}"}}
 
@@ -246,11 +257,11 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
                     if i > user_idx and m["role"] != "assistant" and m["content"]]
         for i in tool_idx:
             if dlp.find_secret(msgs[i]["content"]):
-                return reject(dlp.SECRET_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail")
+                return reject(dlp.SECRET_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail", i)
             # TOOL_RAILS=profile : rails PII complets, carte bancaire comprise
             # (le motif carte n'est plus dans le YAML, il est ici).
             if s.tool_rails == "profile" and dlp.find_card(msgs[i]["content"]):
-                return reject(dlp.CARD_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail")
+                return reject(dlp.CARD_RAIL, f" ({msgs[i]['role']} message #{i})", "adapter rail", i)
 
         # 3. Rails du profil : la conversation jusqu'au dernier user ; avec
         #    TOOL_RAILS=profile, aussi chaque message tool seul (en tant que
@@ -265,6 +276,7 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
 
         masked: list[dict] | None = None
         mask_rail: str | None = None
+        mask_idx: int | None = None
         engine_failed = False
         for (idx, _), res in zip(checks, results):
             where = "" if idx == user_idx else f" ({msgs[idx]['role']} message #{idx})"
@@ -279,15 +291,17 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
                                    "reason": "guardrail engine unavailable (fail-closed)"}}
 
             if res.verdict is Verdict.BLOCKED:
-                return reject(res.rail, where)
+                return reject(res.rail, where, idx=idx)
 
             if res.verdict is Verdict.MODIFIED and res.content != msgs[idx]["content"]:
                 masked = masked or [dict(m) for m in msgs]  # message count must stay identical
                 masked[idx]["content"] = res.content
                 mask_rail = mask_rail or res.rail
+                mask_idx = idx if mask_idx is None else mask_idx
 
         if masked is not None:
-            decide(Direction.INPUT, "mask", mask_rail, req)
+            decide(Direction.INPUT, "mask", mask_rail, req, msgs[mask_idx]["content"],
+                   "" if mask_idx == user_idx else f" ({msgs[mask_idx]['role']} message #{mask_idx})")
             return {"action": {"body": {"messages": masked},
                                "reason": f"content transformed by NeMo rail: {mask_rail or 'transform'}"}}
 
@@ -303,6 +317,7 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
     async def process_responses(payload: GuardrailsResponseRequest, req: Request) -> dict[str, Any]:
         choices = [c.model_dump() for c in payload.body.choices]
         changed, rails, failed = False, [], False
+        blocked_text: str | None = None
         out = []
         for ch in choices:
             msg = ch["message"]
@@ -316,16 +331,18 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
                 # replaced by the refusal text (choice count preserved).
                 content, changed = refusal(res.rail), True
                 rails.append(res.rail)
+                blocked_text = blocked_text or msg["content"]
             elif res.verdict is Verdict.MODIFIED and res.content != msg["content"]:
                 content, changed = res.content, True
                 rails.append(res.rail or "transform")
+                blocked_text = blocked_text or msg["content"]
             else:
                 content = msg["content"]
             out.append({"message": {"role": msg["role"], "content": content}})
 
         if changed:
             rail = ",".join(r for r in rails if r) or ("engine-error" if failed else None)
-            decide(Direction.OUTPUT, "mask", rail, req)
+            decide(Direction.OUTPUT, "mask", rail, req, blocked_text)
             return {"action": {"body": {"choices": out}, "reason": f"response rewritten by NeMo rails: {rail}"}}
         decide(Direction.OUTPUT, "pass", "engine-error" if failed else None, req)
         return {"action": {"reason": "all output rails passed"}}
@@ -353,4 +370,9 @@ def create_app(settings: Settings | None = None, backend: RailBackend | None = N
 # uvicorn ne configure que ses propres journaux : sans ceci, les lignes INFO de
 # l'adaptateur (démarrage, décisions) seraient perdues.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+_blocked_handler = logging.StreamHandler()
+_blocked_handler.setFormatter(logging.Formatter("%(message)s"))
+blocked_log.addHandler(_blocked_handler)
+blocked_log.propagate = False
+blocked_log.setLevel(logging.INFO)
 app = create_app()
