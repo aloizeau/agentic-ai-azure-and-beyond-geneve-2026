@@ -24,6 +24,7 @@ spec:
       containers:
         - name: adapter
           image: nemo-guardrail-adapter
+          imagePullPolicy: Always   # le tag 0.1.0 est reconstruit sur place (prepare.ps1) : ne pas servir l'image en cache du nœud
           ports:
             - { name: http, containerPort: 8080 }
           env:

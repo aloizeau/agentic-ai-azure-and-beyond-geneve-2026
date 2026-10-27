@@ -216,3 +216,50 @@ resource "azurerm_role_assignment" "kubelet_acr_pull" {
   principal_id         = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
   principal_type       = "ServicePrincipal"
 }
+
+# -----------------------------------------------------------------------------
+# Container logs -> Log Analytics.
+# With msi_auth_for_monitoring_enabled the oms_agent block only installs the
+# agent: without a data collection rule associated to the cluster, nothing is
+# ingested (ContainerLogV2 stays empty, so the guardrails dashboard shows
+# "No data"). The association MUST be named ContainerInsightsExtension.
+# -----------------------------------------------------------------------------
+resource "azurerm_monitor_data_collection_rule" "container_insights" {
+  name                = "dcr-ci-${var.base}"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  tags                = var.tags
+
+  destinations {
+    log_analytics {
+      name                  = "ciworkspace"
+      workspace_resource_id = azurerm_log_analytics_workspace.this.id
+    }
+  }
+
+  data_flow {
+    streams      = ["Microsoft-ContainerLogV2"]
+    destinations = ["ciworkspace"]
+  }
+
+  data_sources {
+    extension {
+      name           = "ContainerInsightsExtension"
+      extension_name = "ContainerInsights"
+      streams        = ["Microsoft-ContainerLogV2"]
+      extension_json = jsonencode({
+        dataCollectionSettings = {
+          interval               = "1m"
+          namespaceFilteringMode = "Off"
+          enableContainerLogV2   = true
+        }
+      })
+    }
+  }
+}
+
+resource "azurerm_monitor_data_collection_rule_association" "container_insights" {
+  name                    = "ContainerInsightsExtension"
+  target_resource_id      = azurerm_kubernetes_cluster.this.id
+  data_collection_rule_id = azurerm_monitor_data_collection_rule.container_insights.id
+}
