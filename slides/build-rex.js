@@ -4,7 +4,8 @@
 //  Talk de ~45 min · jeudi 29 octobre 2026, 18:00–21:00 · Tesla Store Genève
 //  Antoine LOIZEAU · Smart Cloud Architect
 //
-//  NODE_PATH=<modules globaux> node build-rex.js   → rex-architectures-ia-entreprise.pptx
+//  NODE_PATH=<modules globaux> node build-rex.js               → rex-architectures-ia-entreprise.pptx
+//  THEME=clair NODE_PATH=<modules globaux> node build-rex.js   → rex-architectures-ia-entreprise-clair.pptx
 //  Programme annoncé : (1) Microsoft Foundry et les architectures IA d'entreprise,
 //  (2) déploiement et orchestration sur AKS, (3) Solo.io Agent Gateway et Agent
 //  Registry, (4) kagent et la gestion du cycle de vie des agents, (5) REX,
@@ -13,9 +14,9 @@
 //  A → demos/A-ratelimit-entra (section 03), B → demos/B-agent-equipe (section 04),
 //  C → demos/C-nemo-guardrails (section 05).
 // =============================================================================
-const { C, H, B, M, W, MX, LOGO_PATH, LOGO_RATIO, createDeck } = require("./theme");
+const { C, H, B, M, W, MX, LOGO_PATH, LOGO_RATIO, PHOTO_PATH, prepareAssets, createDeck, SUFFIX, pt } = require("./theme");
 
-const EVENT = { kicker: "JEUDI 29 OCTOBRE 2026 · GENÈVE", place: "Tesla Store Genève · Rue de la Confédération 8 · 18:00–21:00" };
+const EVENT = { kicker: "CHALET AZURE ROMANDIE · JEUDI 29 OCTOBRE 2026 · GENÈVE", place: "Tesla Store Genève · Rue de la Confédération 8 · 18:00–21:00" };
 
 // Minutage : 40 min de talk + 5 min de questions. Un créneau par slide, dans l'ordre.
 const TIMES = [null,
@@ -24,10 +25,11 @@ const TIMES = [null,
   "8:15", "8:15 — 9:15", "9:15 — 10:15",                                              // 02 AKS
   "10:15", "10:15 — 11:15", "11:15 — 12:00", "12:00 — 15:30", "15:30 — 16:30",       // 03 Solo.io (démo A)
   "16:30 — 17:30", "17:30 — 18:15", "18:15 — 19:15",
-  "19:15", "19:15 — 20:00", "20:00 — 20:45", "20:45 — 22:00", "22:00 — 22:45",       // 04 kagent (démo B)
-  "22:45 — 23:30", "23:30 — 29:30", "29:30 — 30:15",
-  "30:15", "30:15 — 31:30", "31:30 — 32:30", "32:30 — 33:15", "33:15 — 33:45",       // 05 REX (démo C)
-  "33:45 — 34:30", "34:30 — 37:30", "37:30 — 38:15", "38:15 — 38:45", "38:45 — 40:00",
+  "19:15", "19:15 — 20:00", "20:00 — 20:45", "20:45 — 22:00", "22:00 — 22:45",       // 04 kagent (démo B, vidéo)
+  "22:45 — 23:30", "23:30 — 27:30", "27:30 — 28:30", "28:30 — 29:15",
+  "29:15", "29:15 — 30:30", "30:30 — 31:30", "31:30 — 32:15", "32:15 — 32:45",       // 05 REX (garde-fous, démo C)
+  "32:45 — 33:30", "33:30 — 34:00", "34:00 — 34:30", "34:30 — 37:30",
+  "37:30 — 38:15", "38:15 — 38:45", "38:45 — 40:00",
   "40:00 — 45:00",                                                                    // questions
   "ANNEXE", "ANNEXE", "ANNEXE", "ANNEXE", "ANNEXE", "ANNEXE",
 ];
@@ -37,15 +39,19 @@ const D = createDeck({
   footer: "IA agentique : vers Azure et au-delà !  ·  Antoine LOIZEAU",
   times: TIMES,
 });
+const N = {};   // numéros de slides utiles aux notes, relevés pendant la construction
 const { pres, icon, newSlide, kicker, title, labels, card, iconCircle, txt, bullets, code, arrow, line, tag, pill, num, divider } = D;
 
 // Table helpers
-const hd = (t, o = {}) => ({ text: t, options: { fill: { color: C.surf2 }, color: C.white, bold: true, fontFace: H, fontSize: 12.5, align: "center", valign: "middle", ...o } });
-const lb = (t, o = {}) => ({ text: t, options: { fill: { color: C.surf }, color: C.text, fontFace: B, fontSize: 12, valign: "middle", bold: true, ...o } });
-const cl = (t, o = {}) => ({ text: t, options: { fill: { color: C.surf }, color: C.text, fontFace: B, fontSize: 11.5, valign: "middle", align: "center", ...o } });
+// Cellules de tableau : la taille passe par pt() (lisibilité en projection)
+const cell = (t, base, o) => { const opt = { ...base, ...o }; opt.fontSize = pt(opt.fontSize); return { text: t, options: opt }; };
+const hd = (t, o = {}) => cell(t, { fill: { color: C.surf2 }, color: C.white, bold: true, fontFace: H, fontSize: 12.5, align: "center", valign: "middle" }, o);
+const lb = (t, o = {}) => cell(t, { fill: { color: C.surf }, color: C.text, fontFace: B, fontSize: 12, valign: "middle", bold: true }, o);
+const cl = (t, o = {}) => cell(t, { fill: { color: C.surf }, color: C.text, fontFace: B, fontSize: 11.5, valign: "middle", align: "center" }, o);
 const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
 
 (async () => {
+  await prepareAssets();
   // =================================================================== OUVERTURE
   // ----------------------------------------------------------------- 1. Titre
   {
@@ -61,11 +67,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     txt(s, EVENT.place, MX, 6.85, 9, 0.3, { size: 11, color: C.dim });
     labels(s, [["cloud", "azure"], ["cloud", "au-delà"]], { x: 9.4, y: 2.2, size: 22 });
     s.addNotes(
-      "Accueil. Laisser le clin d'œil faire sourire, sans le commenter longtemps : « On part d'Azure… et on garde la liberté d'aller au-delà. » " +
-      "Aucune image du personnage ni du film dans le deck : la réplique seule suffit. " +
-      "Le sous-titre reprend le descriptif de l'annonce. Le produit s'appelle aujourd'hui Microsoft Foundry " +
-      "(l'annonce dit encore « Microsoft AI Foundry », c'est le même service, renommé). " +
-      "Transition : « Avant l'architecture, je vais vous raconter un week-end. »"
+      "MESSAGE · On part d'Azure… et on garde la liberté d'aller au-delà.\n• Remercier le Chalet Azure Romandie, qui organise, et le Tesla Store Genève, qui nous accueille.\n• Laisser le clin d'œil du titre faire sourire, sans le commenter.\n• « Microsoft AI Foundry » dans l'annonce = Microsoft Foundry aujourd'hui : même service, renommé.\n→ « Avant l'architecture, je vais vous raconter un week-end. »"
     );
   }
 
@@ -77,7 +79,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, lx, ly, lw, lh);
     const d = 1.85, px = lx + (lw - d) / 2, py = ly + 0.25;
     s.addShape(pres.shapes.OVAL, { x: px - 0.07, y: py - 0.07, w: d + 0.14, h: d + 0.14, fill: { color: C.surf }, line: { color: C.accent, width: 3 } });
-    s.addImage({ path: "assets/antoine.jpg", x: px, y: py, w: d, h: d, rounding: true, altText: "Portrait d'Antoine LOIZEAU" });
+    s.addImage({ path: PHOTO_PATH, x: px, y: py, w: d, h: d, rounding: true, altText: "Portrait d'Antoine LOIZEAU" });
     txt(s, "Antoine", lx, 3.22, lw, 0.45, { face: H, size: 24, color: C.white, align: "center" });
     txt(s, "LOIZEAU", lx, 3.6, lw, 0.55, { face: H, size: 30, bold: true, color: C.white, align: "center", cs: 2 });
     txt(s, "Senior Cloud Architect · Freelance", lx, 4.15, lw, 0.35, { size: 14, color: C.muted, align: "center" });
@@ -105,11 +107,20 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       card(s, rx, y, rw, h);
       await iconCircle(s, rows[i][0], rx + 0.3, y + 0.3, 0.85, C.accent);
       txt(s, rows[i][1], rx + 1.4, y + 0.18, 3.6, 0.4, { face: H, size: 17, bold: true, color: C.white });
-      txt(s, rows[i][2], rx + 4.2, y + 0.2, rw - 4.45, 0.35, { face: M, size: 11, color: C.accent, align: "right" });
-      txt(s, rows[i][3], rx + 1.4, y + 0.62, rw - 1.65, 0.7, { size: 13.5, color: C.text, lsm: 1.05 });
+      const qr = i === 1;   // « Partager » : QR code du blog, sur fond blanc pour rester lisible en thème sombre
+      const tagRight = qr ? rx + rw - 1.55 : rx + rw - 0.25;
+      txt(s, rows[i][2], tagRight - 3.6, y + 0.2, 3.6, 0.35, { face: M, size: 11, color: C.accent, align: "right" });
+      txt(s, rows[i][3], rx + 1.4, y + 0.62, rw - 1.65 - (qr ? 1.3 : 0), 0.7, { size: 13.5, color: C.text, lsm: 1.05 });
+      if (qr) {
+        const qd = 1.21, qx = rx + rw - qd - 0.12, qy = y + 0.12;
+        s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: qx - 0.04, y: qy - 0.04, w: qd + 0.08, h: qd + 0.08, rectRadius: 0.06, fill: { color: "FFFFFF" }, line: { color: C.accent, width: 1.25 } });
+        s.addImage({ path: "assets/qr-blog.png", x: qx, y: qy, w: qd, h: qd, altText: "QR code : blog.smartcloudarchitect.fr" });
+      }
     }
     txt(s, "Le Terraform, les manifestes, les démos et les tableaux de bord de ce soir sont publiés.", rx, 6.52, rw, 0.35, { size: 13, italic: true, color: C.accent });
-    s.addNotes("Trente secondes. Une seule idée : tout ce que vous allez voir est publié et rejouable.");
+    s.addNotes(
+      "MESSAGE · Tout ce que vous allez voir est publié et rejouable.\n• 30 secondes : architecte cloud freelance, MCT, MVP 2024 Azure Infrastructure as Code.\n• Le QR code de la carte « Partager » mène au blog ; celui du dépôt est sur la slide « Merci ».\n→ L'histoire."
+    );
   }
 
   // ----------------------------------------------------------------- 3. Cold open
@@ -121,9 +132,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     txt(s, "Une clé API qui fuite. Aucune limite de consommation.\nPersonne pour regarder avant le lundi matin.", MX, 4.6, 8.5, 1.2, { size: 20, color: C.muted, lsm: 1.15 });
     labels(s, [["identité", "partagée"], ["limite", "aucune"], ["trace", "aucune"]], { x: 9.0, y: 1.95, color: C.yellow, size: 18 });
     s.addNotes(
-      "L'histoire, sans nommer le client — jamais, même en Q&A : « un groupe média français, environ 3 000 collaborateurs ». " +
-      "L'IA ouverte à tous, sans limite. Une clé fuit. Lundi matin : plus de 60 000 € de consommation. " +
-      "Laisser le chiffre respirer. « Ce n'est pas une histoire de hackers. C'est une histoire d'architecture. »"
+      "MESSAGE · Ce n'est pas une histoire de hackers, c'est une histoire d'architecture.\n• Un groupe média français, ~3 000 collaborateurs. Ne jamais nommer le client, même en questions.\n• L'IA ouverte à tous, sans limite. Vendredi soir, une clé fuit. Lundi matin : plus de 60 000 €.\n• Marquer un silence après le chiffre.\n→ « Qu'est-ce qui manquait ? Trois choses. »"
     );
   }
 
@@ -146,7 +155,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, cards[i][3], x + 0.35, y + 2.5, w - 0.7, 0.9, { size: 14, color: C.muted, lsm: 1.1 });
     }
     txt(s, "Une plateforme d'agents « prête pour l'entreprise », c'est d'abord ces trois réponses.", MX, 6.1, 12, 0.5, { face: H, size: 19, bold: true, color: C.accent });
-    s.addNotes("Identité, limite, trace : les trois questions qui structurent la suite. Chaque brique du programme répond à l'une d'elles.");
+    s.addNotes(
+      "MESSAGE · Identité, limite, trace : les trois questions du talk.\n• Qui appelle ? Combien ? Quoi, avec quel outil ?\n• Chaque brique du programme répond à l'une d'elles.\n→ Le programme."
+    );
   }
 
   // ----------------------------------------------------------------- 5. Programme
@@ -169,12 +180,15 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, it[2], MX + 1.3, y + 0.44, 7.3, 0.3, { size: 12.5, color: C.muted });
       if (it[3]) pill(s, it[3], C.green, MX + 10.4, y + 0.23, 1.5);
     });
-    s.addNotes("Trente secondes. Le programme annoncé, dans l'ordre. Les démos sont réparties dans les étapes, pas reléguées à la fin.");
+    s.addNotes(
+      "MESSAGE · Cinq étapes, trois démos réparties dans le talk.\n• Démo A en direct, démo B en vidéo, démo C en direct.\n• 30 secondes, ne pas détailler.\n→ Étape 1 : Foundry."
+    );
   }
 
   // =================================================================== 01 FOUNDRY
   await divider("01", "Microsoft Foundry et les architectures IA d'entreprise", "Où Foundry s'arrête, où la plateforme commence.",
-    "Transition. On part du besoin du client, puis on place Foundry dans l'architecture.", "Foundry · architecture de référence");
+      "→ On part du besoin du client, puis on place Foundry dans l'architecture."
+    , "Foundry · architecture de référence");
 
   // ----------------------------------------------------------------- 7. Contexte REX
   {
@@ -216,8 +230,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, bx + 4.6, 4.85, 1.35, 1.72, { fill: C.surf2, line: C.border });
     txt(s, "Modèles\nFoundry", bx + 4.6, 4.85, 1.35, 1.72, { size: 12, align: "center", valign: "middle" });
     s.addNotes(
-      "Le constat avant la plateforme : chaque équipe réinventait l'authentification, la gestion des clés, les connecteurs. " +
-      "Personne ne voyait la consommation globale. Le week-end à 60 000 € n'est que le symptôme le plus visible."
+      "MESSAGE · Sans socle commun, chacun réinvente tout et personne ne voit la facture.\n• Chaque projet : son SDK, sa clé, ses connecteurs, son authentification.\n• Le week-end à 60 000 € n'est que le symptôme le plus visible.\n→ « Voici le socle qu'on a construit. »"
     );
   }
 
@@ -243,7 +256,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     for (let i = 0; i < layers.length; i++) await iconCircle(s, layers[i][0], MX + 0.2, 1.95 + i * 0.88 + 0.1, 0.54, layers[i][4]);
     // Transverse
     const tx = MX + 9.3, tw = W - MX - tx;
-    card(s, tx, 1.95, tw, 4.26, { fill: "0B1A33", line: C.accent, lw: 1.5 });
+    card(s, tx, 1.95, tw, 4.26, { fill: C.tintBlue, line: C.accent, lw: 1.5 });
     txt(s, "TRANSVERSE", tx + 0.2, 2.1, tw - 0.4, 0.3, { face: H, size: 11, bold: true, color: C.accent, cs: 2 });
     const tr = [["Identité", "Entra ID · Workload ID"], ["Observabilité", "Prometheus · Grafana"], ["Gouvernance", "politiques · catalogue"], ["Livraison", "Terraform · GitHub OIDC"]];
     tr.forEach((t, i) => {
@@ -252,9 +265,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     });
     txt(s, "La règle du REX : aucune couche ne parle directement à un fournisseur de modèles. Tout passe par la passerelle.", MX, 6.4, 12.1, 0.45, { size: 15, italic: true, color: C.accent });
     s.addNotes(
-      "La carte mentale du talk. Cinq couches, chacune avec sa brique open source, et quatre préoccupations transverses. " +
-      "Foundry est la couche du bas. Toutes les autres tournent dans AKS. " +
-      "La phrase en bas est la décision d'architecture qui a tout changé : aucun agent, aucun front ne détient de clé fournisseur."
+      "MESSAGE · Aucune couche ne parle directement à un fournisseur de modèles.\n• La carte du talk : cinq couches, une brique open source par couche, quatre sujets transverses.\n• Foundry est la couche du bas ; tout le reste tourne dans AKS.\n• Décision clé : aucun agent, aucun front ne détient de clé fournisseur.\n→ Ce qu'on prend à Foundry."
     );
   }
 
@@ -286,15 +297,14 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     ], rx + 0.25, 2.55, rw - 0.5, 2.6, { size: 13.5, psa: 10 });
     txt(s, "Endpoint OpenAI v1, sans api-version. Le scope cognitiveservices.azure.com est remplacé par ai.azure.com.", rx + 0.25, 5.25, rw - 0.5, 0.9, { size: 11.5, italic: true, color: C.muted });
     s.addNotes(
-      "Foundry, c'est notre fournisseur de modèles et notre première ligne de garde-fous. " +
-      "Les trois profils GPT-5.6 sont déployés : Sol en GlobalStandard pour les travaux complexes, Terra et Luna en DataZoneStandard pour rester en UE. " +
-      "Pièges vécus : le renommage des rôles (Azure AI User → Foundry User, GUID inchangé), le retrait de /models le 26/08/2026, le nouveau scope."
+      "MESSAGE · Foundry, ce sont nos modèles et notre première ligne de garde-fous.\n• Trois profils GPT-5.6 : Sol en Global (travaux complexes), Terra et Luna en Data Zone UE.\n• Sans clé : la passerelle s'authentifie en Workload Identity.\n• Pièges vécus (annexe) : rôles renommés, GUID inchangés · /models retiré le 26/08/2026 · nouveau scope ai.azure.com.\n→ « Pourquoi pas Foundry Agent Service ? »"
     );
   }
 
   // ----------------------------------------------------------------- 10. Agent Service ou AKS
   {
     const s = newSlide();
+    N.agentService = D.count();
     kicker(s, "LE CHOIX D'ARCHITECTURE");
     title(s, "Foundry Agent Service ou plateforme AKS ?");
     const rows = [
@@ -310,16 +320,14 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, MX, 5.95, 12.13, 0.82, { fill: C.surf, line: C.accent });
     txt(s, "Pas un camp à choisir : Foundry Control Plane sait inscrire des agents externes (A2A, via sa passerelle IA). Une piste pour faire voir nos agents kagent dans Foundry.", MX + 0.3, 5.95, 11.5, 0.82, { size: 13.5, color: C.white, valign: "middle" });
     s.addNotes(
-      "La question qu'on me pose toujours. Le client avait besoin d'agents proches de ses outils, multi-fournisseurs, et d'un modèle self-service Kubernetes : AKS. " +
-      "Honnêteté : Foundry Agent Service apporte nativement ce qu'on a dû construire — identité d'agent (Entra Agent ID, GA), garde-fous sur les appels d'outils. " +
-      "Source : Microsoft Learn, « Guardrails and controls overview » et « Register and manage custom agents » (Foundry Control Plane, via AI gateway / API Management). " +
-      "L'inscription de nos agents dans Foundry Control Plane n'a pas été testée : c'est une piste, pas une démo."
+      "MESSAGE · Pas un camp à choisir : AKS répondait à nos contraintes.\n• Notre besoin : des agents près des outils du SI, plusieurs fournisseurs, du self-service Kubernetes.\n• Honnêteté : Agent Service apporte nativement ce qu'on a construit — Entra Agent ID (GA), garde-fous sur les appels d'outils.\n• Foundry Control Plane sait inscrire des agents externes : une piste, non testée.\n→ Étape 2 : AKS."
     );
   }
 
   // =================================================================== 02 AKS
   await divider("02", "Déploiement et orchestration sur AKS", "Une plateforme qui sort de terre en un apply.",
-    "Transition vers le concret : ce qui tourne dans le cluster, et comment ça arrive.", "AKS · Terraform · Workload ID");
+      "→ Du concept au concret : ce qui tourne dans le cluster, et comment ça arrive."
+    , "AKS · Terraform · Workload ID");
 
   // ----------------------------------------------------------------- 12. Architecture
   {
@@ -333,7 +341,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, MX, 4.7, 1.75, 1.4, { fill: C.surf, line: C.border });
     txt(s, "GitHub Actions\nTerraform", MX, 4.7, 1.75, 1.4, { size: 12, bold: true, align: "center", valign: "middle", color: C.muted });
 
-    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 2.65, y: 1.85, w: 7.55, h: 4.75, rectRadius: 0.12, fill: { color: "07101F" }, line: { color: C.green, width: 1.5, dashType: "dash" } });
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 2.65, y: 1.85, w: 7.55, h: 4.75, rectRadius: 0.12, fill: { color: C.zone }, line: { color: C.green, width: 1.5, dashType: "dash" } });
     txt(s, "AKS  ·  couches portables", 2.85, 1.95, 4, 0.3, { face: H, size: 11, bold: true, color: C.green, cs: 1 });
     const box = (t, sub, x, y, w, h, ln = C.border, tc = C.white) => {
       card(s, x, y, w, h, { fill: C.surf, line: ln });
@@ -350,7 +358,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
 
     card(s, 10.55, 1.85, 2.2, 2.55, { fill: C.surf, line: C.yellow });
     txt(s, "Microsoft Foundry", 10.6, 1.92, 2.1, 0.35, { face: H, size: 13, bold: true, color: C.yellow, align: "center" });
-    card(s, 10.65, 2.32, 2.0, 0.78, { fill: "0B2A1F", line: C.green, lw: 1.5 });
+    card(s, 10.65, 2.32, 2.0, 0.78, { fill: C.tintGreen, line: C.green, lw: 1.5 });
     s.addImage({ data: await icon("FaShieldAlt", C.green), x: 10.75, y: 2.47, w: 0.42, h: 0.46 });
     txt(s, "Garde-fous", 11.22, 2.36, 1.4, 0.3, { face: H, size: 12, bold: true, color: C.green, valign: "middle" });
     txt(s, "filtres · Prompt\nShields", 11.22, 2.66, 1.4, 0.42, { size: 9.5, color: C.text, valign: "top", lsm: 0.95 });
@@ -371,9 +379,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     arrow(s, 10.37, 2.71, 0.26, 0, C.yellow);
     arrow(s, MX + 1.78, 5.4, 0.46, 0, C.muted);
     s.addNotes(
-      "Le périmètre en pointillés verts est portable. Deux choses sortent du cluster : Entra ID et Foundry — les deux adaptateurs Azure. " +
-      "Les flèches : LibreChat appelle la passerelle avec le jeton de l'utilisateur ; les agents kagent l'appellent avec la clé de leur équipe ; " +
-      "la passerelle relaie aussi les outils MCP. Grafana lit les métriques de la passerelle : coût, jetons et outils par personne."
+      "MESSAGE · Tout ce qui est dans le cadre vert est portable.\n• Deux adaptateurs Azure seulement : Entra ID et Foundry.\n• LibreChat appelle la passerelle avec le jeton de l'utilisateur ; les agents avec la clé de leur équipe.\n• La passerelle relaie aussi les outils MCP ; Grafana lit ses métriques : coût, jetons, outils par personne.\n→ Ce qu'AKS apporte."
     );
   }
 
@@ -387,7 +393,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       ["FaDoorOpen", "Deux portes", "Gateway interne (ClusterIP) et publique (IP statique, Let's Encrypt, Entra ID devant chaque UI)."],
       ["FaMicrochip", "GPU à la demande", "Add-on KAITO : un modèle ouvert dans le cluster, derrière la même passerelle."],
       ["FaNetworkWired", "Isolation", "Cilium et NetworkPolicy : seuls les proxys atteignent garde-fous et modèles."],
-      ["FaLayerGroup", "Deux phases Terraform", "Azure d'abord (AKS, Foundry, identités), puis Helm : agentgateway, kagent, agentregistry…"],
+      ["FaCodeBranch", "Tout part de Git", "Terraform en deux phases (Azure, puis Helm), manifestes d'équipe en Kustomize. Prêt pour Argo CD ou Flux."],
       ["FaLock", "Zéro secret dans Git", "GitHub Actions s'authentifie par OIDC fédéré ; l'état Terraform par Entra ID."],
     ];
     for (let i = 0; i < 6; i++) {
@@ -400,15 +406,14 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     }
     txt(s, "2 × D4as_v5, plan de contrôle Free : le socle du PoC ≈ 0,41 $ de l'heure, détruit après chaque session.", MX, 6.45, 12.1, 0.4, { size: 13, italic: true, color: C.accent });
     s.addNotes(
-      "Ce que l'on gagne à mettre la plateforme sur AKS plutôt que dans des services séparés : identité des workloads, isolation réseau, GPU à la demande. " +
-      "Le label azure.workload.identity/use sur les pods est obligatoire — piège classique. " +
-      "Une identité managée par porte : id-agentgateway et id-agentgateway-public."
+      "MESSAGE · AKS apporte l'identité des workloads, l'isolation réseau et le GPU à la demande.\n• Piège : le label azure.workload.identity/use est obligatoire sur les pods.\n• Tout part de Git : Terraform (Azure, puis Helm), manifestes d'équipe en Kustomize.\n• Si on demande GitOps : pas d'Argo CD ni de Flux, par simplicité ; les manifestes sont prêts pour un contrôleur en pull.\n→ Étape 3 : la passerelle."
     );
   }
 
   // =================================================================== 03 SOLO.IO
   await divider("03", "Solo.io Agent Gateway et Agent Registry", "Un point de contrôle et un catalogue.",
-    "Transition. La salle a souvent Azure API Management : ce passage doit être irréprochable.", "agentgateway · démo A · garde-fous · agentregistry");
+      "→ La salle connaît souvent Azure API Management : le comparatif qui suit reste factuel."
+    , "agentgateway · démo A · garde-fous · agentregistry");
 
   // ----------------------------------------------------------------- 16. Comparatif
   {
@@ -424,7 +429,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       [lb("Modèle de configuration", { bold: false }), v("Ressources Azure + policies XML"), v("config.yaml + état en base"), v("CRD Kubernetes (Gateway API)")],
       [lb("Créer un serveur MCP depuis une API REST", { bold: false }), v("Oui"), v("Non"), v("Non")],
       [lb("Fédérer N serveurs MCP derrière un endpoint", { bold: false }), v("Non"), v("Oui"), v("Oui")],
-      [lb("Autorisation par outil MCP à l'exécution", { bold: false }), v("Non"), v("Oui — par clé, équipe"), v("Oui — CEL sur le JWT")],
+      [lb("Autorisation par outil MCP à l'exécution", { bold: false }), v("Non"), v("Oui — par clé, équipe"), v("Oui — CEL (Common Expression Language) sur le JWT")],
       [lb("Consommation par utilisateur", { bold: false }), v("Oui — métriques de jetons"), v("Oui — dépenses en base"), v("Oui — jetons et coût")],
       [lb("Portail développeur, produits, abonnements", { bold: false }), v("Oui"), v("Partiel"), v("Non")],
       [lb("Tourne hors Azure", { bold: false }), v("Self-hosted gateway"), v("Oui"), v("Oui")],
@@ -433,9 +438,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     s.addTable(rows, { x: MX, y: 1.85, w: 12.13, colW: [3.9, 2.75, 2.7, 2.78], rowH: [0.45, 0.5, 0.46, 0.46, 0.46, 0.46, 0.46, 0.46, 0.5], ...TB });
     txt(s, "Documentation officielle de chaque projet. Si votre point de départ est un patrimoine d'API REST, regardez APIM en premier ; pour une plateforme Kubernetes multi-fournisseurs, agentgateway.", MX, 6.3, 12.1, 0.55, { size: 11.5, color: C.dim });
     s.addNotes(
-      "Lire sans militantisme : deux lignes pour APIM (REST→MCP, portail), deux pour les autres (fédération, autorisation par outil). " +
-      "Ce qui a fait basculer le client : l'écosystème Kubernetes (kagent, kmcp, agentregistry), Gateway API, l'autorisation par outil, la fédération MCP, l'empreinte Rust. " +
-      "Détail en annexe. Ne jamais citer le multiple de débit publié par l'éditeur : backend factice."
+      "MESSAGE · Trois bons outils, trois terrains : notre terrain, une plateforme Kubernetes multi-fournisseurs.\n• APIM gagne sur REST → MCP et le portail ; LiteLLM et agentgateway sur la fédération MCP et l'autorisation par outil.\n• Ce qui a fait basculer : écosystème Kubernetes, Gateway API, autorisation par outil, empreinte Rust (annexe).\n• Ne jamais citer le multiple de débit de l'éditeur : mesuré sur un backend factice.\n• Si on parle de la sécurité de LiteLLM : CVE-2026-42271 (exécution de commande, corrigée en 1.83.7), chaînée à CVE-2026-48710 dans Starlette (corrigée en 1.0.1), ajoutée au catalogue KEV de la CISA début juin 2026. Message : une passerelle IA concentre toutes les clés, elle se patche comme un composant critique — agentgateway compris.\n→ Ce qui se passe dans la passerelle."
     );
   }
 
@@ -446,7 +449,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     title(s, "Chaque requête traverse la même chaîne — LLM et outils");
     const steps = [
       ["FaIdCard", "Identité", "JWT Entra ID\nou clé d'équipe"],
-      ["FaFilter", "Autorisation", "CEL sur jwt.*\net mcp.tool.name"],
+      ["FaFilter", "Autorisation", "CEL (Common Expression Language) sur jwt.* et mcp.tool.name"],
       ["FaShieldAlt", "Contenu", "regex · webhook\nNeMo (trafic LLM)"],
       ["FaTachometerAlt", "Plafonds", "rateLimit\nen jetons"],
     ];
@@ -456,7 +459,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       card(s, x, y, w, h);
       await iconCircle(s, steps[i][0], x + (w - 0.7) / 2, y + 0.25, 0.7, C.green);
       txt(s, steps[i][1], x + 0.1, y + 1.05, w - 0.2, 0.4, { face: H, size: 15, bold: true, color: C.white, align: "center" });
-      txt(s, steps[i][2], x + 0.1, y + 1.5, w - 0.2, 0.7, { face: M, size: 9.5, color: C.accent, align: "center" });
+      txt(s, steps[i][2], x + 0.08, y + 1.45, w - 0.16, 0.8, { size: 10.5, color: C.accent, align: "center", lsm: 0.95 });
       arrow(s, x + w + 0.02, y + h / 2, 0.21, 0, C.muted);
     }
     const mx = MX + 4 * 2.2;
@@ -468,20 +471,22 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, rx, y, W - MX - rx, h);
     await iconCircle(s, "FaEye", rx + (W - MX - rx - 0.7) / 2, y + 0.25, 0.7, C.green);
     txt(s, "Trace", rx + 0.1, y + 1.05, W - MX - rx - 0.2, 0.4, { face: H, size: 15, bold: true, color: C.white, align: "center" });
-    txt(s, "jetons · coût\nuser · team", rx + 0.1, y + 1.5, W - MX - rx - 0.2, 0.7, { face: M, size: 9.5, color: C.accent, align: "center" });
-    const acts = [["Mask", "remplace la donnée sensible", C.accent], ["Reject", "bloque avant le modèle", C.yellow], ["Audit", "laisse passer, mais trace", C.muted]];
+    txt(s, "jetons · coût\nuser · team", rx + 0.1, y + 1.45, W - MX - rx - 0.2, 0.8, { size: 10.5, color: C.accent, align: "center", lsm: 0.95 });
+    // Le contrôle de contenu, déplié : ce qu'il fait quand il détecte quelque chose
+    const cx = MX + 2 * 2.2 + 1.95 / 2;
+    line(s, cx, y + h, 0, 0.3, C.green, 1.5, "dash");
+    card(s, MX, 4.75, 12.13, 0.62, { fill: C.bg, line: C.green, dash: "dash" });
+    txt(s, "Si le contrôle de contenu détecte une donnée sensible :", MX + 0.25, 4.75, 4.0, 0.62, { size: 12.5, bold: true, color: C.green, valign: "middle" });
+    const acts = [["MASQUER", "la remplace, puis continue", C.accent], ["REJETER", "bloque avant le modèle", C.yellow], ["AUDITER", "laisse passer, mais trace", C.muted]];
     acts.forEach((a, i) => {
-      const x = MX + i * 2.75;
-      pill(s, a[0], a[2], x, 4.85, 1.05, 0.38);
-      txt(s, a[1], x + 1.18, 4.85, 1.5, 0.4, { size: 12.5, color: C.text, valign: "middle" });
+      const x = MX + 4.3 + i * 2.6;
+      pill(s, a[0], a[2], x, 4.89, 1.05, 0.34);
+      txt(s, a[1], x + 1.15, 4.75, 1.45, 0.62, { size: 11, color: C.text, valign: "middle" });
     });
-    txt(s, "Portée : prompt et réponse — y compris les résultats d'outils renvoyés au modèle.", 8.9, 4.85, 3.85, 0.4, { size: 12.5, color: C.muted, valign: "middle" });
     card(s, MX, 5.55, 12.13, 0.9, { fill: C.surf, line: C.accent });
     txt(s, "Aucune ligne dans les agents : changez de modèle ou de cloud, la chaîne suit.", MX + 0.3, 5.55, 11.5, 0.9, { size: 17, color: C.white, valign: "middle", bold: true });
     s.addNotes(
-      "Une requête de gauche à droite. Chaque étape est une AgentgatewayPolicy attachée à une route. " +
-      "Nouveauté du PoC : les appels d'outils MCP passent eux aussi par la passerelle (/mcp), avec le jeton de l'utilisateur. " +
-      "C'est ce qui permet de compter qui a appelé quel outil — et de lui appliquer les mêmes garde-fous."
+      "MESSAGE · Une seule chaîne de contrôle pour les LLM et les outils, sans une ligne dans les agents.\n• Chaque étape est une AgentgatewayPolicy attachée à une route.\n• Les appels d'outils MCP passent aussi par la passerelle, avec le jeton de l'utilisateur : on sait qui appelle quoi.\n• Le bandeau vert : la réaction du contrôle de contenu — masquer, rejeter ou auditer.\n→ « Je vous le montre. »"
     );
   }
 
@@ -525,11 +530,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, steps[i][2], 9.2, y + 0.4, 3.6, 0.6, { size: 12.5, color: C.muted });
     }
     s.addNotes(
-      "./demos/A-ratelimit-entra/run.ps1 (PowerShell, az, kubectl). Deux objets Kubernetes appliqués en direct : une HTTPRoute ouverte, puis une AgentgatewayPolicy. " +
-      "Étape 1 : trois appels anonymes, tous 200 — « vendredi soir, la clé fuit ». Étape 2 : jeton Entra ID obligatoire (émetteur et audience recopiés de la politique acces-llm) : 401, puis 200 avec mon jeton — " +
-      "la passerelle sait qui je suis. Étape 3 : plafond de 400 jetons/min, 429 au bout de quelques appels — « lundi matin, une alerte, pas une facture ». " +
-      "Étape 4 : Grafana, dossier Plateforme IA, filtre Utilisateur. Honnêteté : le plafond local est par route et par réplica ; un budget par équipe ou par personne demande le rate limit global. " +
-      "Secours : vidéo démo A. Après : reset.ps1."
+      "DÉMO A · EN DIRECT · ./demos/A-ratelimit-entra/run.ps1\n1 · Route ouverte : trois appels anonymes, 200 — « vendredi soir, la clé fuit ».\n2 · Jeton Entra ID obligatoire : 401 sans, 200 avec — la passerelle sait qui je suis.\n3 · Plafond de 400 jetons/min : 429 — « lundi matin, une alerte, pas une facture ».\n4 · Grafana, dossier Plateforme IA, filtre Utilisateur.\n• Honnêteté : plafond par route et par réplica ; un budget par équipe demande le rate limit global.\n• Secours : vidéo A. Après : reset.ps1.\n→ « Limiter, c'est fait. Filtrer le contenu, c'est l'étape suivante. »"
     );
   }
 
@@ -563,19 +564,11 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     });
     card(s, MX, 5.7, 6.3, 1.1, { fill: C.surf, line: C.yellow });
     txt(s, "Efficaces et natifs, mais attachés à chaque déploiement Azure : ils ne voient pas les appels d'outils de nos agents kagent et ne suivent pas un changement de fournisseur.", MX + 0.25, 5.7, 5.85, 1.1, { size: 12.5, color: C.white, valign: "middle", lsm: 1.05 });
-    card(s, 7.2, 5.7, W - MX - 7.2, 1.1, { fill: "2A0F14", line: C.red, lw: 1.5 });
+    card(s, 7.2, 5.7, W - MX - 7.2, 1.1, { fill: C.tintRed, line: C.red, lw: 1.5 });
     txt(s, "ET CLAUDE ?", 7.4, 5.78, 2.5, 0.28, { face: H, size: 10.5, bold: true, color: C.red, cs: 2 });
     txt(s, "Les modèles Anthropic du catalogue Foundry n'ont aucun filtre de contenu Foundry : seules les protections d'Anthropic s'appliquent.", 7.4, 6.05, W - MX - 7.6, 0.7, { size: 12, color: C.white, lsm: 1.05 });
     s.addNotes(
-      "Ce qui tourne en production chez le client aujourd'hui. Un guardrail Foundry est un ensemble de contrôles : un risque, un point d'intervention, une action (annoter ou bloquer). " +
-      "Pour un modèle : entrée et sortie. Les points « appel d'outil » et « réponse d'outil » existent, mais pour les agents du Foundry Agent Service, en préversion. " +
-      "Compter 50 à 100 ms par point d'intervention activé (Microsoft Learn). " +
-      "Limite pour nous : nos agents tournent dans AKS ; leurs appels d'outils MCP ne passent pas par Foundry. Et un modèle Bedrock ou KAITO n'a pas ces filtres.\n" +
-      "ET CLAUDE ? Vérifié sur Microsoft Learn (« Claude models in Microsoft Foundry », section Responsible AI) : « Foundry doesn't provide built-in content filtering for Claude models at deployment time » — " +
-      "Microsoft demande de configurer soi-même la sécurité du contenu à l'inférence. Les modèles Claude sont des offres Marketplace de partenaire : Anthropic en est le vendeur, l'opérateur et le sous-traitant des données, " +
-      "et seuls les systèmes de sécurité d'Anthropic s'appliquent (le système de guardrails Foundry couvre les « Foundry Models sold by Azure »). " +
-      "Deux autres points pour un public européen : hébergé chez Anthropic, le traitement peut sortir d'Azure ; hébergé sur Azure, il n'existe que Global Standard et Data Zone Standard US — pas de Data Zone UE. " +
-      "Conclusion pour la plateforme : un Claude consommé via Foundry doit passer par la passerelle pour hériter des mêmes règles (agentgateway sait appeler l'endpoint Anthropic de Foundry, /anthropic/v1/messages — à valider sur notre backend)."
+      "MESSAGE · Les garde-fous Foundry tournent en production : efficaces, mais attachés aux déploiements Azure.\n• Un garde-fou = un risque, un point d'intervention, une action (annoter ou bloquer). Compter 50 à 100 ms par point activé.\n• Appel et réponse d'outil : agents Foundry seulement, en préversion. Nos agents kagent n'en profitent pas.\n• Claude dans Foundry : aucun filtre de contenu Foundry (Microsoft Learn), seules les protections d'Anthropic ; pas de Data Zone UE.\n→ « D'où une règle à la passerelle, pour tous les modèles. »"
     );
   }
 
@@ -590,7 +583,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     const fb = (t, sub, x, w, ln, tc = C.white) => { card(s, x, fy, w, 1.15, { line: ln, lw: 1.5 }); txt(s, t, x, fy + 0.14, w, 0.4, { face: H, size: 14, bold: true, color: tc, align: "center" }); txt(s, sub, x + 0.05, fy + 0.55, w - 0.1, 0.55, { size: 10.5, color: C.muted, align: "center" }); };
     fb("agentgateway", "regex natif (µs)", fx, 2.2, C.accent, C.accent);
     arrow(s, fx + 2.22, fy + 0.57, 0.5, 0, C.muted);
-    txt(s, "webhook", fx + 2.2, fy + 0.15, 0.6, 0.3, { face: M, size: 9, color: C.muted, align: "center" });
+    txt(s, "webhook", fx + 2.12, fy + 0.15, 0.76, 0.3, { size: 9, color: C.muted, align: "center" });
     fb("Adaptateur", "contrat webhook\nagentgateway", fx + 2.8, 2.0, C.border);
     arrow(s, fx + 4.82, fy + 0.57, 0.5, 0, C.muted);
     fb("NeMo Guardrails", "rails Colang\nmode bibliothèque", fx + 5.4, 2.3, C.green, C.green);
@@ -616,10 +609,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, MX, 6.0, 12.13, 0.75, { fill: C.surf, line: C.accent });
     txt(s, "Open source (Apache-2.0) en mode bibliothèque. Le mode microservice (NIM Operator) relève de la licence NVIDIA AI Enterprise.", MX + 0.3, 6.0, 11.5, 0.75, { size: 13.5, color: C.white, valign: "middle" });
     s.addNotes(
-      "La cible : une seule règle pour Foundry, Bedrock, KAITO ou un autre cloud. Le garde-fou webhook d'agentgateway appelle un adaptateur qui pilote NeMo Guardrails (nemoguardrails 0.24.1). " +
-      "Branché sur le trafic LLM, NeMo voit aussi ce que les outils renvoient au modèle (les résultats d'outils font partie des messages suivants) : c'est ce qui manque côté Foundry pour nos agents kagent. " +
-      "Honnêteté : R&D, prototypé en parallèle des missions, pas en production. Le code est dans le dépôt (guardrails/) et activable par Terraform (enable_nemo_guardrails). " +
-      "Limites documentées : en streaming, le masquage ne s'applique pas — utiliser Reject ; le webhook n'a pas de délai propre, d'où une politique de timeout de 3 s."
+      "MESSAGE · Une seule règle pour tous les modèles : NeMo Guardrails derrière la passerelle.\n• agentgateway appelle un adaptateur en webhook, qui pilote NeMo (bibliothèque 0.24.1).\n• Sur le trafic LLM, NeMo voit aussi les résultats d'outils renvoyés au modèle.\n• Honnêteté : R&D, pas en production. Code dans guardrails/, activable par Terraform.\n• Limites : pas de masquage en streaming (utiliser Reject) ; délai de 3 s côté passerelle.\n→ Qui protège quoi."
     );
   }
 
@@ -644,10 +634,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     s.addTable(rows, { x: MX, y: 1.9, w: 12.13, colW: [3.55, 2.86, 2.86, 2.86], rowH: [0.45, 0.48, 0.48, 0.55, 0.6, 0.5, 0.5, 0.46], ...TB });
     txt(s, "La règle de référence vit à la passerelle ; les filtres natifs restent la deuxième ligne. Un modèle ou un outil appelé en direct échappe aux deux.", MX, 6.15, 12.1, 0.7, { face: H, size: 15, bold: true, color: C.accent });
     s.addNotes(
-      "Le slide de synthèse sécurité. Ne pas opposer Foundry et NeMo : on empile. " +
-      "La ligne importante est la troisième : les appels d'outils de nos agents. Foundry ne les voit pas. La passerelle voit les résultats d'outils quand l'agent les renvoie au modèle, et compte chaque appel quand l'outil est publié derrière elle (/mcp). " +
-      "D'où une règle de plateforme : pas d'outil d'entreprise branché en direct dans un agent. " +
-      "Ligne Claude : les modèles Anthropic de Foundry n'ont pas de filtrage de contenu Foundry (Microsoft Learn) ; derrière la passerelle, ils récupèrent nos règles — sinon, seules les protections d'Anthropic."
+      "MESSAGE · On empile, on n'oppose pas : la règle de référence à la passerelle, Foundry en deuxième ligne.\n• Ligne clé : les appels d'outils de nos agents — Foundry ne les voit pas, la passerelle oui s'ils passent par /mcp.\n• Règle de plateforme : aucun outil d'entreprise branché en direct dans un agent.\n• Claude récupère nos règles s'il passe par la passerelle.\n• Le catalogue NeMo et le comparatif détaillé viennent juste avant la démo C.\n→ Le catalogue des briques : Agent Registry."
     );
   }
 
@@ -673,23 +660,21 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     ];
     feats.forEach((f, i) => {
       const y = 1.95 + i * 0.85;
-      num(s, i + 1, rx, y + 0.05, 0.45, "5B21B6", 13);
+      num(s, i + 1, rx, y + 0.05, 0.45, C.violetDeep, 13);
       txt(s, f[0], rx + 0.65, y, 2.0, 0.4, { face: H, size: 15, bold: true, color: C.white });
       txt(s, f[1], rx + 0.65, y + 0.36, rw - 0.65, 0.45, { size: 12, color: C.muted });
     });
     card(s, MX, 6.05, 12.13, 0.72, { fill: C.surf, line: C.yellow });
     txt(s, "v0.4.0 (août 2026), Apache-2.0. L'édition open source n'a pas d'authentification : jamais exposée, ClusterIP et droits limités aux namespaces d'équipe.", MX + 0.3, 6.05, 11.5, 0.72, { size: 13.5, color: C.white, valign: "middle" });
     s.addNotes(
-      "agentregistry répond à « qu'est-ce qui existe, qui l'a publié, quelle version tourne où ». Déployé par Terraform (modules/platform/registry.tf, chart 0.4.0). " +
-      "Son runtime Kubernetes traduit un « Deployment » du registre en MCPServer kmcp, RemoteMCPServer ou Agent BYO kagent. " +
-      "Limite à dire : en open source, le fournisseur d'autorisation laisse tout passer ; l'édition Solo Enterprise ajoute l'authentification. " +
-      "D'où : ClusterIP, port-forward, et rbac.watchedNamespaces = les namespaces d'équipe. Démo complète dans le dépôt (demos/extras/cycle-de-vie-registre), pas sur scène ce soir."
+      "MESSAGE · Qu'est-ce qui existe, qui l'a publié, quelle version tourne où ?\n• Serveurs MCP, agents, skills, prompts et modèles, versionnés ; déployé par Terraform (chart 0.4.0).\n• Le registre déploie en ressources kagent ou kmcp, dans le namespace de l'équipe.\n• Limite : l'édition open source n'a pas d'authentification → ClusterIP, port-forward, droits limités aux namespaces d'équipe.\n• Démo complète dans le dépôt (demos/extras/cycle-de-vie-registre), pas ce soir.\n→ Étape 4 : ce que les équipes livrent."
     );
   }
 
   // =================================================================== 04 KAGENT
   await divider("04", "kagent et le cycle de vie des agents", "De la v0 à la v1 · une équipe « Agent Ready » en deux pipelines.",
-    "Transition. On passe de la plateforme à ce que les équipes livrent dessus.", "kagent · cycle de vie · démo B");
+      "→ De la plateforme à ce que les équipes livrent dessus."
+    , "kagent · cycle de vie · démo B");
 
   // ----------------------------------------------------------------- 24. Stack IA
   {
@@ -707,7 +692,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       const col = i % 3, row = Math.floor(i / 3);
       const x = MX + col * 4.1, y = 1.95 + row * 2.3, w = 3.8, h = 2.05;
       if (i === 5) {
-        card(s, x, y, w, h, { fill: "1B1236", line: C.violet, lw: 1.5 });
+        card(s, x, y, w, h, { fill: C.tintViolet, line: C.violet, lw: 1.5 });
         await iconCircle(s, "FaBook", x + 0.3, y + 0.3, 0.7, C.violet);
         txt(s, "agentregistry", x + 1.15, y + 0.3, w - 1.35, 0.4, { face: H, size: 17, bold: true, color: C.white });
         txt(s, "le catalogue", x + 1.15, y + 0.7, w - 1.35, 0.3, { face: M, size: 10.5, color: C.violet });
@@ -722,8 +707,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     }
     txt(s, "Une équipe ne livre plus « son intégration IA » : elle livre des ressources que la plateforme sait valider, déployer, observer et retirer.", MX, 6.5, 12.1, 0.45, { size: 14, italic: true, color: C.accent });
     s.addNotes(
-      "Le cœur de l'argument « plateforme ». Le vocabulaire est celui de kagent 0.10 (API kagent.dev/v1alpha2), la version stable déployée par le PoC. " +
-      "kagent tourne sur Google ADK (plus AutoGen) ; les CRD Team, Memory, Session, ToolServer de 2025 n'existent plus."
+      "MESSAGE · Une équipe ne livre plus une intégration IA : elle livre des ressources Kubernetes.\n• Vocabulaire de kagent 0.10 (kagent.dev/v1alpha2), la version stable du PoC.\n• kagent tourne sur Google ADK ; les CRD Team, Memory et Session de 2025 n'existent plus.\n→ Un manifeste complet."
     );
   }
 
@@ -767,14 +751,14 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, e[1], 9.05, y + 0.36, 3.75, 0.75, { size: 12.5, color: C.muted, lsm: 1.05 });
     });
     s.addNotes(
-      "Le manifeste que la démo B déploie (modèle de dépôt d'équipe « Agent Ready »). Insister sur (1) : l'agent ne connaît pas le fournisseur, il parle à la passerelle avec la clé de son équipe. " +
-      "Et (4) : réponse à « et si l'agent fait une bêtise ? ». Champs vérifiés contre le CRD kagent v1alpha2."
+      "MESSAGE · Tout l'agent tient dans un manifeste relu en pull request.\n• (1) L'agent ne connaît pas le fournisseur : il parle à la passerelle avec la clé de son équipe.\n• (4) Réponse à « et si l'agent fait une bêtise ? » : les outils qui écrivent attendent un humain.\n• C'est le manifeste que déploie la démo B.\n→ « Attention, kagent 1.0 change ce modèle. »"
     );
   }
 
   // ----------------------------------------------------------------- 26. kagent v0 → v1
   {
     const s = newSlide();
+    N.kagentV1 = D.count();
     kicker(s, "KAGENT · DE LA V0 À LA V1");
     tag(s, "ALPHA", C.yellow);
     title(s, "kagent 1.0 : fin du type Declarative, place au Harness");
@@ -792,13 +776,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, MX, 6.05, 12.13, 0.75, { fill: C.surf, line: C.accent });
     txt(s, "Pour ce talk : 0.10.x en production, 1.0 en essai. Un agent BYO d'aujourd'hui (une image A2A quelconque) ne tourne pas tel quel en 1.0.", MX + 0.3, 6.05, 11.5, 0.75, { size: 13.5, color: C.white, valign: "middle" });
     s.addNotes(
-      "kagent 1.0.0-alpha1 le 18/09/2026, alpha8 le 05/10/2026 ; la branche stable est 0.10.x (0.10.3 le 28/09/2026). Sources : dépôt kagent-dev/kagent, docs/architecture. " +
-      "Le changement de fond : le type Declarative disparaît. Ce qu'il contenait se répartit en deux objets réutilisables : AgentTemplate décrit le comportement (modèle, prompt, outils, skills, sous-agents), Harness décrit l'exécution (image, env, Substrate). " +
-      "Focus BYO : en 0.10, BYO = « apportez n'importe quel serveur A2A » avec un pod très configurable. En 1.0, BYO est une variante de Harness : image figée par digest, " +
-      "commande explicite, et l'image doit implémenter le contrat runtime privé de kagent (A2A gRPC, /readyz, TaskStore à KAGENT_API_URL) — " +
-      "un serveur A2A amont avec un stockage en mémoire ne suffit pas. ModelConfig devient optionnel pour BYO ; la config ADK est fournie si l'image la lit. " +
-      "Les clés ne sont plus dans l'environnement : un placeholder, et la passerelle d'egress Substrate remplace l'en-tête — les clients BYO doivent honorer le bundle de confiance. " +
-      "Conséquences pour nous : réécrire les manifestes (template + harness), et agentregistry v0.4.0 génère encore des Agents BYO kagent.dev/v1alpha2 — à suivre."
+      "MESSAGE · kagent 1.0 remplace le type Declarative par Template + Harness : à suivre, pas encore à déployer.\n• 0.10.x en production ; 1.0 en alpha (alpha8 le 05/10/2026) : nouveau groupe d'API, installation neuve.\n• AgentTemplate = le comportement ; Harness = l'exécution (image figée par digest, Substrate).\n• Piège BYO : une image A2A quelconque ne tourne plus telle quelle (contrat runtime kagent).\n• Les secrets sortent de l'agent : injectés par la passerelle d'egress.\n→ Le même agent dans les deux versions."
     );
   }
 
@@ -849,16 +827,14 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       "    image: …/golang-adk@sha256:…   # digest obligatoire",
       "  substrate: { workerPoolRef: …, snapshotPolicy: … }",
       "---",
-      "kind: Agent                    # le couple",
+      "# LE LIEN : ce comportement, avec ce runtime",
+      "kind: Agent",
       "spec: { templateRef: { name: assistant-tickets },",
       "        harnessRef:  { name: adk-go } }",
+      "# même template + autre harness = même agent, autre runtime",
     ], 6.35, 1.85, W - MX - 6.35, 5.0, { size: 10, label: "demos/extras/cycle-de-vie-registre/kagent-v1/…" });
     s.addNotes(
-      "Le même agent, écrit pour les deux versions — le fichier v1 est dans le dépôt, validé contre les CRD kagent v1.0.0-alpha8, mais non appliqué (la plateforme tourne en 0.10.x). " +
-      "À gauche, tout est dans un objet et le runtime est implicite. À droite : le comportement (AgentTemplate) se partage entre agents, " +
-      "le runtime (Harness) devient explicite et figé par digest — kagent ADK, Codex, Claude ou votre propre image (byo, avec une commande obligatoire). " +
-      "Deux pièges de migration : systemMessageFrom devient systemPromptFrom, et les outils ne référencent plus un MCPServer kmcp mais un RemoteMCPServer. " +
-      "Le déclaratif ne disparaît pas — c'est toujours du YAML GitOps ; c'est le type Declarative, monolithique, qui disparaît."
+      "MESSAGE · Le kind Agent ne décrit plus rien : il relie un comportement et un runtime.\n• Gauche : un seul objet, runtime implicite. Droite : AgentTemplate (quoi) + Harness (comment) + Agent (le lien).\n• Un template pour N agents, un harness pour une classe d'agents : on change de runtime sans réécrire le comportement.\n• Pièges de migration : systemMessageFrom devient systemPromptFrom ; outils en RemoteMCPServer seulement.\n• Fichier v1 validé contre les CRD alpha8, non appliqué.\n→ Le cycle de vie."
     );
   }
 
@@ -895,9 +871,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, b[1], x, 5.75, 3.8, 0.8, { size: 13, color: C.text, lsm: 1.05 });
     });
     s.addNotes(
-      "Ce qui a permis au client de passer d'intégrations au cas par cas à des stacks standardisées. " +
-      "Le bas de l'écran indique qui porte chaque étape : l'équipe publie et fait évoluer, la plateforme observe et retire. " +
-      "La démo B montre le début du cycle — préparer une équipe, construire, déployer, faire évoluer ; versions et retrait avec agentregistry : demos/extras/cycle-de-vie-registre."
+      "MESSAGE · Un agent vit comme un Deployment : publié, versionné, déployé, observé, retiré.\n• En bas, qui porte chaque étape : l'équipe publie et fait évoluer, la plateforme observe et retire.\n• C'est ce qui a fait passer le client d'intégrations au cas par cas à des stacks standardisées.\n→ « Concrètement, comment une équipe démarre ? En vidéo. »"
     );
   }
 
@@ -905,7 +879,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
   {
     const s = newSlide();
     kicker(s, "DÉMO B");
-    tag(s, "LIVE", C.green);
+    tag(s, "VIDÉO", C.accent);
     title(s, "« Agent Ready » : l'équipe IA prépare, l'équipe de dev déploie", { size: 27 });
     const cols = [
       { x: MX, w: 4.3, color: C.violet, head: "ÉQUIPE IA · AGENT READY", icon: "FaUserShield",
@@ -916,24 +890,115 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
         lines: ["après l'image, ou push agent/ docs/", "uses: …/agent-deploy.yml", "docs → stockage · kubectl apply dans SON namespace", "passerelle : serveur MCP découvert ; LibreChat répond"] },
     ];
     for (const c of cols) {
-      card(s, c.x, 1.95, c.w, 3.8, { line: c.color, lw: 1.5 });
-      await iconCircle(s, c.icon, c.x + 0.25, 2.12, 0.6, c.color);
-      txt(s, c.head, c.x + 1.0, 2.12, c.w - 1.1, 0.6, { face: H, size: 12.5, bold: true, color: c.color, valign: "middle", cs: 1 });
-      bullets(s, c.lines, c.x + 0.25, 2.9, c.w - 0.45, 2.75, { size: 13, psa: 7 });
+      card(s, c.x, 1.85, c.w, 3.3, { line: c.color, lw: 1.5 });
+      await iconCircle(s, c.icon, c.x + 0.25, 2.0, 0.55, c.color);
+      txt(s, c.head, c.x + 0.95, 2.0, c.w - 1.05, 0.55, { face: H, size: 12.5, bold: true, color: c.color, valign: "middle", cs: 1 });
+      bullets(s, c.lines, c.x + 0.25, 2.7, c.w - 0.45, 2.4, { size: 12.5, psa: 5 });
     }
-    arrow(s, MX + 4.32, 3.85, 0.21, 0, C.muted, 2);
-    arrow(s, MX + 8.17, 3.85, 0.21, 0, C.muted, 2);
-    card(s, MX, 5.98, 12.13, 0.82, { fill: C.surf, line: C.yellow });
-    txt(s, "Les pipelines de dev tiennent en dix lignes : ils appellent ceux de l'équipe IA. La plateforme fait évoluer la CI de toutes les équipes sans toucher à leurs dépôts.", MX + 0.3, 5.98, 11.5, 0.82, { size: 13.5, color: C.white, valign: "middle" });
+    arrow(s, MX + 4.32, 3.5, 0.21, 0, C.muted, 2);
+    arrow(s, MX + 8.17, 3.5, 0.21, 0, C.muted, 2);
+    // Le gabarit : ce que contient le dépôt agent-<équipe>
+    card(s, MX, 5.3, 12.13, 1.5, { fill: C.tintBlue, line: C.accent, lw: 1.5 });
+    txt(s, "LE GABARIT · dépôt agent-<équipe>", MX + 0.25, 5.38, 6, 0.3, { face: H, size: 11, bold: true, color: C.accent, cs: 1 });
+    txt(s, "Kustomize, pas de chart Helm — Helm reste côté plateforme", MX + 6.3, 5.38, 5.6, 0.3, { size: 11, italic: true, color: C.muted, align: "right" });
+    const tpl = [
+      ["mcp/", "serveur MCP : code + Dockerfile"],
+      ["deploy/", "ServiceAccount fédéré, MCP, NetworkPolicy, RemoteMCPServer"],
+      ["agent/", "Agent + ModelConfig vers la passerelle"],
+      ["docs/", "le contenu métier de l'équipe"],
+    ];
+    tpl.forEach((t, i) => {
+      const x = MX + 0.25 + i * 2.97;
+      txt(s, t[0], x, 5.78, 2.8, 0.3, { face: M, size: 13, bold: true, color: C.white });
+      txt(s, t[1], x, 6.1, 2.8, 0.62, { size: 11, color: C.muted, lsm: 1.0 });
+    });
     s.addNotes(
-      "./demos/B-agent-equipe/run.ps1 (prérequis, une fois : ai_team_github_repository dans terraform.tfvars, deploy.ps1, prepare.ps1). " +
-      "1 · Équipe IA : gh workflow run agent-ready.yml -f equipe=equipe-docs ; dans GitHub, « Review deployments » → ai-team → Approve ; Terraform crée tout pour CETTE équipe, état teams/equipe-docs.tfstate. " +
-      "2 · Preuve : identités et fédérations (GitHub main, ServiceAccount docs-mcp), stockage, namespace, RoleBinding, variables du dépôt. " +
-      "3 · Équipe de dev : « 1 · Image » puis « 2 · Déploiement » s'enchaîne (workflow_run). Montrer les dix lignes de 1-image.yml : uses: <plateforme>/agent-image.yml@main. " +
-      "4 · tools/list sur /mcp-equipes : outils equipe-docs--docs_*, découverts par label ; 401 sans jeton. " +
-      "5 · LibreChat : « Qui répond aux alertes d'astreinte ? » → astreinte.md. " +
-      "6 · L'équipe pousse un document : seul « 2 · Déploiement » repart, l'agent connaît la soirée de ce soir. " +
-      "Avant : un ticket, trois semaines, cinq équipes à relancer. Secours : vidéo démo B. Après : reset.ps1."
+      "DÉMO B · VIDÉO (≈ 4 min), enregistrée avec ./demos/B-agent-equipe/run.ps1 — la commenter en direct.\n1 · Équipe IA : agent-ready.yml, approbation « ai-team », Terraform crée tout pour l'équipe.\n2 · Preuve : identités fédérées, stockage, namespace, variables du dépôt.\n3 · Équipe de dev : « 1 · Image » puis « 2 · Déploiement », dix lignes qui appellent les workflows de l'équipe IA.\n4 · La passerelle découvre le serveur MCP ; 401 sans jeton.\n5 · LibreChat répond depuis les documents de l'équipe.\n6 · Un document poussé : seul le déploiement repart.\n• Gabarit en Kustomize, pas de chart Helm : Helm installe la plateforme, pas les agents.\n• Avant : un ticket, trois semaines, cinq équipes à relancer.\n• Si la vidéo ne part pas : passer au schéma de la slide suivante.\n→ Ce qui a été créé."
+    );
+  }
+
+  // ----------------------------------------------------------------- 28-B. Démo B : ce qui est déployé
+  {
+    const s = newSlide();
+    kicker(s, "DÉMO B · ARCHITECTURE");
+    title(s, "Ce qu'« Agent Ready » crée pour une équipe", { size: 24, w: 8.0 });
+    // Légende : la couleur du contour dit QUI crée la ressource
+    const leg = [["existant (plateforme)", C.dim], ["créé par Agent Ready", C.violet], ["déployé par l'équipe", C.accent]];
+    leg.forEach((l, i) => {
+      const x = 8.75, y = 0.95 + i * 0.3;
+      s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y: y + 0.05, w: 0.32, h: 0.17, rectRadius: 0.04, fill: { color: C.surf }, line: { color: l[1], width: 1.75 } });
+      txt(s, l[0], x + 0.42, y, 3.5, 0.27, { size: 11, color: C.text, valign: "middle" });
+    });
+
+    // Une ressource : contour = créateur, titre + détail
+    const res = (x, y, w, h, t, sub, color, o = {}) => {
+      card(s, x, y, w, h, { line: color, lw: 1.5, fill: o.fill ?? C.surf });
+      txt(s, t, x + 0.15, y + 0.08, w - 0.3, 0.32, { face: o.mono ? M : H, size: o.ts ?? 12.5, bold: true, color: C.white });
+      if (sub) txt(s, sub, x + 0.15, y + 0.42, w - 0.3, h - 0.48, { size: o.ss ?? 10.5, color: C.muted, lsm: 1.0 });
+    };
+    const zone = (x, y, w, h, label, color, dash) => {
+      s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y, w, h, rectRadius: 0.1, fill: { color: C.zone }, line: { color, width: 1.25, ...(dash ? { dashType: "dash" } : {}) } });
+      txt(s, label, x + 0.18, y + 0.08, w - 0.36, 0.28, { face: H, size: 11, bold: true, color, cs: 1 });
+    };
+
+    const Y0 = 1.9, ZH = 4.95;
+    // ---------------- GitHub
+    zone(MX, Y0, 3.35, ZH, "GITHUB", C.text);
+    res(MX + 0.18, Y0 + 0.45, 2.99, 1.95, "Dépôt plateforme · équipe IA",
+      "environnement « ai-team » : approbation\nagent-ready.yml → Terraform\nun état par équipe (teams/<équipe>.tfstate)\nworkflows réutilisables : agent-image.yml · agent-deploy.yml", C.dim, { ss: 10.5 });
+    res(MX + 0.18, Y0 + 2.75, 2.99, 2.02, "agent-<équipe> · privé",
+      "créé depuis le gabarit\nmcp/ · deploy/ · agent/ · docs/\n8 variables Actions (identité, ACR, AKS, stockage)\n1-image.yml · 2-deploiement.yml : 10 lignes, uses: …", C.violet, { ss: 10.5 });
+    arrow(s, MX + 1.68, Y0 + 2.41, 0, 0.32, C.violet, 1.75);
+    txt(s, "crée", MX + 1.78, Y0 + 2.43, 0.8, 0.28, { size: 10, italic: true, color: C.violet });
+
+    // ---------------- Azure
+    const AX = 4.35, AW = W - MX - AX;
+    zone(AX, Y0, AW, ZH, "AZURE · ABONNEMENT DE LA PLATEFORME", C.accent);
+    // rg-…-equipes
+    const RX = AX + 0.18, RW = 3.75;
+    zone(RX, Y0 + 0.45, RW, ZH - 0.62, "rg-<base>-equipes", C.violet, true);
+    res(RX + 0.15, Y0 + 0.85, RW - 0.3, 1.25, "id-<équipe>-pipeline",
+      "fédérée : agent-<équipe>, branche main\nBlob Data Contributor · AcrPush · AKS Cluster User", C.violet, { mono: true, ts: 12 });
+    res(RX + 0.15, Y0 + 2.22, RW - 0.3, 1.0, "id-<équipe>-mcp",
+      "fédérée : ServiceAccount <équipe>/docs-mcp\nStorage Blob Data Reader", C.violet, { mono: true, ts: 12 });
+    res(RX + 0.15, Y0 + 3.34, RW - 0.3, 1.32, "Compte de stockage",
+      "Entra ID seulement : aucune clé de compte\nconteneur « documents »\n← docs/ poussés par « 2 · Déploiement »", C.violet);
+
+    // Socle existant + namespace AKS
+    const KX = RX + RW + 0.22, KW = AX + AW - 0.18 - KX;
+    res(KX, Y0 + 0.45, KW, 1.25, "Socle plateforme",
+      "id-<base>-ai-team : Contributeur sur rg-…-equipes, RBAC Admin sous condition ABAC (4 rôles)\nACR · AKS (émetteur OIDC) · agentgateway", C.dim, { ss: 10 });
+    zone(KX, Y0 + 1.85, KW, ZH - 2.02, "AKS · NAMESPACE <équipe>", C.green);
+    const nw = (KW - 0.45) / 2, nh = 0.72;
+    const ns = [
+      ["ServiceAccount", "docs-mcp · Workload Identity", C.accent],
+      ["Serveur MCP", "docs-mcp · NetworkPolicy", C.accent],
+      ["Agent kagent", "RemoteMCPServer · ModelConfig", C.accent],
+      ["quota · LimitRange", "2 CPU · 8 Gi · 20 pods", C.violet],
+      ["clé virtuelle", "Secret lu par la passerelle", C.violet],
+      ["RoleBinding", "agentic-team-deployer", C.violet],
+    ];
+    ns.forEach((n, i) => {
+      const col = i < 3 ? 0 : 1, row = i % 3;
+      const x = KX + 0.15 + col * (nw + 0.15), y = Y0 + 2.27 + row * (nh + 0.1);
+      card(s, x, y, nw, nh, { line: n[2], lw: 1.5 });
+      txt(s, n[0], x + 0.12, y + 0.05, nw - 0.2, 0.28, { face: H, size: 11, bold: true, color: C.white });
+      txt(s, n[1], x + 0.12, y + 0.33, nw - 0.2, 0.36, { size: 9.5, color: C.muted, lsm: 0.95 });
+    });
+
+    // Flux principaux (les étiquettes chevauchent la frontière GitHub → Azure qu'elles franchissent)
+    const GX = MX + 0.18 + 2.99, MID = (MX + 3.35 + AX) / 2;
+    arrow(s, GX, Y0 + 0.62, RX - GX, 0, C.violet, 2);                       // Terraform → rg équipes
+    pill(s, "apply", C.violet, MID - 0.3, Y0 + 0.5, 0.6, 0.24);
+    line(s, GX, Y0 + 3.55, MID - GX, 0, C.accent, 1.75, "dash");            // OIDC : dépôt d'équipe → id pipeline
+    line(s, MID, Y0 + 1.55, 0, 2.0, C.accent, 1.75, "dash");
+    arrow(s, MID, Y0 + 1.55, RX + 0.15 - MID, 0, C.accent, 1.75);
+    pill(s, "OIDC", C.accent, MID - 0.27, Y0 + 2.45, 0.54, 0.24);
+    arrow(s, RX + RW - 0.15, Y0 + 1.5, KX + 0.15 - (RX + RW - 0.15), 0.75, C.accent, 1.75);   // pipeline → namespace
+    line(s, RX + RW - 0.15, Y0 + 2.63, KX + 0.15 - (RX + RW - 0.15), 0, C.green, 1.75, "dash"); // SA ↔ id mcp
+
+    s.addNotes(
+      "MESSAGE · En un apply, une équipe reçoit tout ce qu'il lui faut, sans aucun secret.\n• Couleurs : gris = socle existant, violet = créé par Agent Ready, bleu = déployé par l'équipe.\n• GitHub : dépôt agent-<équipe> depuis le gabarit, 8 variables, deux pipelines de dix lignes.\n• Azure : deux identités fédérées (OIDC GitHub, branche main · Workload Identity du serveur MCP), stockage Entra ID seulement, quatre rôles.\n• AKS : namespace, quota, clé virtuelle, RoleBinding ; l'équipe y déploie son serveur MCP et son agent.\n→ Qui a le droit de quoi."
     );
   }
 
@@ -954,16 +1019,14 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, MX, 6.08, 12.13, 0.72, { fill: C.surf, line: C.accent });
     txt(s, "Même mal configuré, un pipeline d'équipe ne peut toucher ni une autre équipe, ni la plateforme — Azure et Kubernetes refusent.", MX + 0.3, 6.08, 11.5, 0.72, { size: 14, color: C.white, valign: "middle" });
     s.addNotes(
-      "Condition ABAC sur Role Based Access Control Administrator : modèle Microsoft Learn « Delegate Azure role assignment management to others with conditions », exemple « Constrain roles and principal types ». " +
-      "Avec un workflow réutilisable, le sujet du jeton OIDC reste celui du dépôt appelant (repo:<owner>/agent-<équipe>:ref:refs/heads/main) : la fédération de l'équipe s'applique. " +
-      "Fichiers : terraform/modules/agent-ready (Azure), terraform/modules/platform/teams.tf (ClusterRoles, politique d'admission), terraform/teams (une équipe). " +
-      "À valider en répétition : le sujet Kubernetes d'une identité managée (object ID) — les pipelines affichent kubectl auth whoami."
+      "MESSAGE · Même mal configuré, un pipeline d'équipe ne peut toucher ni une autre équipe, ni la plateforme.\n• Condition ABAC : l'équipe IA ne peut donner que quatre rôles, à des identités de service.\n• Workflows réutilisables : le jeton OIDC garde le sujet du dépôt appelant, la fédération de l'équipe s'applique.\n• Limite assumée : l'identité Agent Ready lit les Secrets du cluster (Terraform les relit).\n→ Étape 5 : le retour d'expérience."
     );
   }
 
   // =================================================================== 05 REX
   await divider("05", "REX, gouvernance et bonnes pratiques", "Ce qui a fait mal, ce que je referais.",
-    "Dernière ligne droite : identité, coûts, gouvernance. Huit minutes.", "Entra ID · coûts · audit · démo C");
+      "→ Dernière ligne droite, dix minutes : identité, coûts, gouvernance, puis le socle de garde-fous en démo."
+    , "Entra ID · coûts · garde-fous · démo C");
 
   // ----------------------------------------------------------------- 31. Identité : ce qui a fait mal
   {
@@ -986,11 +1049,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     s.addTable(rows, { x: MX, y: 1.85, w: 12.13, colW: [1.7, 2.95, 4.08, 3.4], rowH: [0.4, 0.52, 0.58, 0.58, 0.5, 0.58, 0.58, 0.48], ...TB });
     txt(s, "Le login fonctionne partout. C'est la propagation de l'identité d'un outil à l'autre qui coûte des jours.", MX, 6.3, 12.1, 0.5, { face: H, size: 15, bold: true, color: C.accent });
     s.addNotes(
-      "Le slide le plus « vécu ». Les quatre premières lignes sont des bugs rencontrés sur ce PoC, corrigés dans le dépôt (commits de septembre 2026) : " +
-      "aud v1/v2, l'audience du jeton réutilisé par LibreChat (OPENID_REUSE_TOKENS n'existe qu'à partir des RC v0.8.8), " +
-      "le Basic auth d'oauth2-proxy vers Grafana, le scope groups refusé par Entra dans le sous-chart oauth2-proxy de kagent. " +
-      "Les trois dernières sont structurelles : Graph et Azure MCP tournent avec un principal de service (permissions d'application, consentement admin) — " +
-      "ils voient ce que voit l'application, pas ce que voit l'utilisateur ; GitHub passe en OAuth par utilisateur mais directement depuis LibreChat, hors passerelle."
+      "MESSAGE · Le login marche partout ; c'est la propagation de l'identité qui coûte des jours.\n• Quatre premières lignes : bugs vécus, corrigés dans le dépôt (aud v1/v2, audience LibreChat, Basic auth vers Grafana, scope groups refusé).\n• Trois dernières : structurelles. Les outils Graph et Azure voient ce que voit l'application, pas l'utilisateur.\n→ Où, exactement, l'identité se perd."
     );
   }
 
@@ -998,13 +1057,14 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
   {
     const s = newSlide();
     kicker(s, "REX · IDENTITÉ DE BOUT EN BOUT", C.yellow);
-    title(s, "Où l'identité de l'utilisateur se perd");
+    tag(s, "À VALIDER", C.yellow);
+    title(s, "L'identité peut aller jusqu'à l'outil — pas toute seule");
     const nodes = [
       ["Collaborateur", "compte Entra ID", C.accent],
       ["LibreChat", "jeton d'accès\nréutilisé", C.accent],
       ["agentgateway", "JWT validé\nuser = preferred_username", C.green],
-      ["Agent kagent", "clé de l'équipe\nuser = agent:<équipe>", C.yellow],
-      ["Outil MCP", "identité\nd'application", C.red],
+      ["Agent kagent", "par défaut : clé\nde l'équipe", C.yellow],
+      ["Outil MCP", "par défaut : identité\nd'application", C.red],
     ];
     const y = 2.1, w = 2.15, h = 1.5, gap = 0.345;
     nodes.forEach((n, i) => {
@@ -1016,26 +1076,22 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     });
     // marqueurs de rupture
     txt(s, "✓ identité intacte", MX, 3.75, 7.0, 0.35, { size: 12.5, bold: true, color: C.green });
-    txt(s, "✗ rupture", MX + 3 * (w + gap) - 0.2, 3.75, 2.6, 0.35, { size: 12.5, bold: true, color: C.yellow });
-    txt(s, "✗ rupture", MX + 4 * (w + gap) - 0.2, 3.75, 2.6, 0.35, { size: 12.5, bold: true, color: C.red });
+    txt(s, "✗ rupture, dans la configuration par défaut", MX + 3 * (w + gap) - 0.2, 3.75, 4.9, 0.35, { size: 12.5, bold: true, color: C.yellow });
     const pistes = [
-      ["FaExchangeAlt", "Délégation à la passerelle", "agentgateway v1.5 sait échanger un jeton (RFC 8693 / jwt-bearer RFC 7523) vers un backend MCP : le chemin d'un on-behalf-of Entra vers Graph. À valider."],
-      ["FaUserShield", "Entra Agent ID", "Une identité par agent, GA, avec accès délégué ou autonome ; l'extension des contrôles de sécurité passe par la licence Agent 365."],
-      ["FaKey", "Workload Identity partout", "Les outils Azure en identité managée fédérée plutôt qu'en secret de principal de service."],
+      ["FaExchangeAlt", "① Passerelle → agent", "Après validation, la passerelle retire le JWT. backendAuth « passthrough » le transmet à l'agent."],
+      ["FaRobot", "② Agent → outil", "kagent 0.10 relaie le jeton de l'appelant : allowedHeaders [Authorization] sur le RemoteMCPServer."],
+      ["FaKey", "③ Outil → Graph, Azure…", "Le JWT vise la passerelle, pas Graph : il faut un échange de jeton (on-behalf-of)."],
     ];
     for (let i = 0; i < pistes.length; i++) {
-      const x = MX + i * 4.1, yy = 4.3, ww = 3.8, hh = 2.45;
+      const x = MX + i * 4.1, yy = 4.2, ww = 3.8, hh = 2.1;
       card(s, x, yy, ww, hh);
       await iconCircle(s, pistes[i][0], x + 0.25, yy + 0.25, 0.62, C.accent);
       txt(s, pistes[i][1], x + 1.0, yy + 0.25, ww - 1.15, 0.62, { face: H, size: 14, bold: true, color: C.white, valign: "middle" });
-      txt(s, pistes[i][2], x + 0.25, yy + 1.0, ww - 0.5, 1.4, { size: 11.5, color: C.muted, lsm: 1.05 });
+      txt(s, pistes[i][2], x + 0.25, yy + 1.0, ww - 0.5, 1.1, { size: 12, color: C.muted, lsm: 1.05 });
     }
+    txt(s, "Même bout en bout, les appels LLM de l'agent restent facturés à la clé de l'équipe.", MX, 6.42, 12.1, 0.35, { size: 12.5, italic: true, color: C.accent });
     s.addNotes(
-      "La chaîne réelle du PoC. Jusqu'à la passerelle, on sait qui est la personne. L'agent, lui, s'authentifie avec la clé de son équipe : " +
-      "quand un utilisateur appelle invoke_agent, la passerelle compte l'appel d'outil pour lui, mais les appels LLM de l'agent partent sous la clé de l'équipe. " +
-      "Et l'outil final agit avec l'identité de l'application. Pistes, sans les survendre : " +
-      "oauthTokenExchange existe dans le CRD AgentgatewayBackend v1.5.0 (backend MCP) — non testé avec Entra ; " +
-      "Entra Agent ID est GA (Microsoft Learn), les contrôles de sécurité étendus aux agents demandent Microsoft Agent 365."
+      "MESSAGE · L'identité peut aller jusqu'à l'outil, mais pas avec la configuration par défaut.\n① La passerelle retire le JWT après validation : backendAuth passthrough le transmet.\n② kagent 0.10 relaie le jeton de l'appelant : allowedHeaders sur le RemoteMCPServer.\n③ Pour Graph ou Azure, il faut un échange on-behalf-of.\n• Honnêteté : jamais testé de bout en bout, d'où « À VALIDER ».\n• Même réussi, les appels LLM de l'agent restent facturés à l'équipe.\n• Si on demande : Entra Agent ID (GA) donne une identité propre à chaque agent.\n→ Et la facture ?"
     );
   }
 
@@ -1064,11 +1120,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, p[1], x + 0.2, 5.48, 3.4, 1.15, { size: 11.5, color: C.muted, lsm: 1.05 });
     });
     s.addNotes(
-      "Le vrai sujet FinOps n'est pas « combien coûte un jeton », c'est « à qui je l'impute ». " +
-      "Les libellés user / team / agent sont ajoutés par une AgentgatewayPolicy (frontend.metrics, expressions CEL) sur les deux portes. " +
-      "Le coût est calculé par la passerelle à chaque réponse depuis une grille de prix (model-costs.json, catalogue de modèles agentgateway). " +
-      "Honnêtetés : Microsoft ne publie pas de prix Data Zone pour Terra et Luna ; la promotion Sol de l'automne n'est pas appliquée ; " +
-      "les skills et les outils branchés en direct ne sont pas mesurables à la passerelle."
+      "MESSAGE · Le sujet FinOps, ce n'est pas le prix du jeton : c'est à qui l'imputer.\n• Libellés user, team et agent posés par la passerelle (expressions CEL) ; coût calculé depuis une grille de prix.\n• Honnêtetés : pas de prix Data Zone publiés pour Terra et Luna ; skills et outils branchés en direct non mesurables.\n• Un libellé par personne coûte cher en Prometheus à 3 000 personnes : l'équipe d'abord.\n→ Le tableau de bord."
     );
   }
 
@@ -1107,8 +1159,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     ], 9.15, 1.95, 3.6, 4.1, { size: 8.5, label: "PromQL" });
     txt(s, "Provisionné par Terraform (dossier Plateforme IA), généré par monitoring/src/usage_dashboard.py.", MX, 6.35, 12.1, 0.4, { size: 12.5, italic: true, color: C.muted });
     s.addNotes(
-      "Montré en direct à la fin de la démo A. Toutes les métriques sont natives agentgateway v1.5.0 : jetons (histogramme), coût en USD, requêtes MCP avec l'outil appelé. " +
-      "Le panneau « Réponses sans prix » doit rester à 0 : sinon un modèle manque dans la grille."
+      "MESSAGE · Coût, jetons et outils, par personne et par équipe, sans rien coder.\n• Déjà vu en fin de démo A ; métriques natives d'agentgateway 1.5.\n• Le panneau « Réponses sans prix » doit rester à 0 : sinon, un modèle manque dans la grille.\n→ Les outils ne suffisent pas."
     );
   }
 
@@ -1132,8 +1183,72 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     }
     txt(s, "Chaque réponse est d'abord une décision de gouvernance — puis une ressource Kubernetes.", MX, 5.6, 12.1, 0.6, { face: H, size: 19, bold: true, color: C.accent });
     s.addNotes(
-      "Le client a mis en place une gouvernance transverse et une politique associée. " +
-      "Message : sans elle, la plus belle passerelle applique des règles que personne n'a décidées."
+      "MESSAGE · Sans politique, la plus belle passerelle applique des règles que personne n'a décidées.\n• Le client a posé une gouvernance transverse avant de configurer quoi que ce soit.\n→ « Troisième question, quelles données vers quel outil : c'est le socle de garde-fous. »"
+    );
+  }
+
+  // ----------------------------------------------------------------- 35-B. Catalogue natif NeMo Guardrails
+  {
+    const s = newSlide();
+    kicker(s, "SÉCURISER LES LLM · LE CATALOGUE", C.yellow);
+    tag(s, "R&D", C.yellow);
+    title(s, "Le catalogue natif de NeMo Guardrails, et ce qu'il bloque", { size: 26 });
+    const ref = (t) => cl(t, { color: C.red, bold: true, align: "left", fontSize: 10.5 });
+    const soft = (t, color) => cl(t, { color, bold: true, align: "left", fontSize: 10.5 });
+    const flow = (t) => cl(t, { fontFace: M, fontSize: 8.5, align: "left", color: C.accent });
+    const st = (t) => cl(t, { fontSize: 10.5 });
+    const cost = (t, color) => cl(t, { fontSize: 9.5, color, bold: true });
+    const repo = (t) => cl(t, { fontSize: 10.5, color: t === "—" ? C.dim : C.green, bold: t !== "—" });
+    const CD = C.green, CM = C.violet, CL = C.yellow;   // déterministe · modèle dédié · LLM
+    const rows = [
+      [hd("Famille"), hd("Rails natifs (flows)"), hd("Étape"), hd("Réaction si détecté"), hd("Coût"), hd("Dépôt")],
+      [lb("Motifs regex", { fontSize: 10.5 }), flow("regex check input · output · retrieval"), st("E · S · R"), ref("Refuser · R : extrait retiré"), cost("déterministe", CD), repo("default · strict")],
+      [lb("Injection (YARA)", { fontSize: 10.5 }), flow("injection detection"), st("S"), ref("Refuser ou retirer (omit)"), cost("déterministe", CD), repo("default · strict")],
+      [lb("Taille du contexte", { fontSize: 10.5 }), flow("context bloat detection on input · on retrieval"), st("E · R"), soft("Refuser, tronquer, avertir", C.yellow), cost("déterministe", CD), repo("—")],
+      [lb("Appels d'outils", { fontSize: 10.5 }), flow("tool call validation · tool result validation"), st("Outils"), ref("Refuser (nom, schéma JSON)"), cost("déterministe", CD), repo("—")],
+      [lb("Jailbreak", { fontSize: 10.5 }), flow("jailbreak detection heuristics · model"), st("E"), ref("Refuser"), cost("modèle dédié", CM), repo("—")],
+      [lb("Données personnelles", { fontSize: 10.5 }), flow("mask sensitive data on input · output · retrieval"), st("E · S · R"), soft("Masquer (Presidio)", C.accent), cost("modèle dédié", CM), repo("—")],
+      [lb("Contenu nuisible", { fontSize: 10.5 }), flow("content safety check input · output $model=…"), st("E · S"), ref("Refuser"), cost("modèle dédié", CM), repo("—")],
+      [lb("Hors sujet", { fontSize: 10.5 }), flow("topic safety check input $model=topic_control"), st("E"), ref("Refuser"), cost("modèle dédié", CM), repo("—")],
+      [lb("Auto-contrôle", { fontSize: 10.5 }), flow("self check input · self check output"), st("E · S"), ref("Refuser"), cost("appel LLM", CL), repo("strict")],
+      [lb("Hallucination", { fontSize: 10.5 }), flow("self check facts · self check hallucination"), st("S"), soft("Refuser ou avertir", C.yellow), cost("appel LLM", CL), repo("—")],
+    ];
+    s.addTable(rows, { x: MX, y: 1.78, w: 12.13, colW: [1.85, 4.55, 0.75, 2.5, 1.2, 1.28], rowH: [0.36, 0.39, 0.39, 0.39, 0.39, 0.39, 0.39, 0.39, 0.39, 0.39, 0.39], ...TB });
+    // Légende : niveaux de réaction, du plus dur au plus souple
+    const lv = [["REFUSER", "le tour s'arrête : 403 à la passerelle", C.red], ["MASQUER", "la donnée est anonymisée", C.accent], ["RETIRER", "contenu fautif retiré ou tronqué", C.violet], ["AVERTIR", "passe, avec un avertissement", C.yellow]];
+    lv.forEach((l, i) => {
+      const x = MX + i * 3.08;
+      pill(s, l[0], l[2], x, 6.27, 1.1, 0.3);
+      txt(s, l[1], x + 1.18, 6.22, 1.85, 0.4, { size: 10, color: C.text, valign: "middle", lsm: 0.95 });
+    });
+    txt(s, "E entrée · S sortie · R extraits récupérés (RAG) · Outils : appels et résultats d'outils. Bibliothèque Apache-2.0 ; rails tiers (Llama Guard, Presidio, Cisco AI Defense…) par configuration.", MX, 6.68, 12.1, 0.28, { size: 9.5, color: C.dim });
+    s.addNotes(
+      "MESSAGE · Le catalogue est large, mais chaque rail a un coût — et les lignes du haut ne coûtent rien.\n• 30 secondes, ne pas lire le tableau.\n• Trois paliers : déterministe (regex, YARA, taille, outils), modèle dédié (jailbreak, PII, contenu), appel LLM (auto-contrôle, hallucination).\n• La plupart des rails refusent (le 403 de la démo C) ; Presidio masque, YARA peut retirer, d'autres avertissent.\n• Dans le dépôt : profil default (regex + YARA, < 10 ms) ; profil strict (+ auto-contrôle).\n→ « Et par rapport à Foundry ? »"
+    );
+  }
+
+  // ----------------------------------------------------------------- 35-C. Foundry face à NeMo : règles et extension
+  {
+    const s = newSlide();
+    kicker(s, "SÉCURISER LES LLM · FOUNDRY OU NEMO");
+    title(s, "Règles fournies et extension : Foundry face à NeMo", { size: 26 });
+    const c = (t, o = {}) => cl(t, { align: "left", fontSize: 10, ...o });
+    const lim = (t) => c(t, { color: C.yellow });
+    const rows = [
+      [hd(""), hd("Microsoft Foundry · garde-fous"), hd("NVIDIA NeMo Guardrails")],
+      [lb("Règles fournies"), c("4 catégories (haine, sexuel, violence, auto-mutilation), Prompt Shields direct et indirect, matériel protégé texte et code, grossièretés · préversion : PII, ancrage, adhérence à la tâche"), c("10 familles natives (slide précédente) et plus de 20 intégrations tierces : Llama Guard, Presidio, Cisco AI Defense…")],
+      [lb("Niveaux de blocage"), c("4 niveaux par catégorie : Off · Low · Medium · High — Medium par défaut, bloque « moyen » et « élevé »"), c("Par rail : refuser, masquer, retirer ou tronquer, avertir · seuils réglables (perplexité, taille, score)")],
+      [lb("Actions"), lim("Annoter, ou annoter et bloquer · annoter seulement, ou couper un filtre en sortie : sur approbation Microsoft"), c("Choisies dans config.yml, sans approbation")],
+      [lb("Regex"), lim("Listes de blocage : terme exact ou regex, 10 000 termes par liste · modèles Azure OpenAI seulement"), c("regex check input · output · retrieval : les motifs dans config.yml")],
+      [lb("Règles métier propres"), lim("Aucun code dans le garde-fou · une classification sur mesure passe par une API à part (Content Safety)"), c("Rails Colang et actions Python : n'importe quelle règle, n'importe quel modèle de contrôle")],
+      [lb("Points d'intervention"), c("Entrée et sortie · appel et réponse d'outil pour les agents Foundry (préversion)"), c("Entrée, sortie, extraits RAG, dialogue, appels et résultats d'outils")],
+      [lb("Modèles couverts"), lim("Modèles vendus par Azure, agents Foundry Agent Service · ni Claude, ni nos agents kagent"), c("Tout modèle derrière la passerelle : Foundry, Claude, Bedrock, KAITO")],
+      [lb("Exploitation"), c("Managé et inclus · 50 à 100 ms par point d'intervention activé", { color: C.green }), lim("À héberger : adaptateur et modèles de contrôle · < 10 ms en profil default")],
+    ];
+    s.addTable(rows, { x: MX, y: 1.78, w: 12.13, colW: [2.2, 5.0, 4.93], rowH: [0.38, 0.62, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], ...TB });
+    txt(s, "Foundry : on règle sans coder, sur ses propres modèles. NeMo : on code ses règles, pour tous les modèles. On empile les deux.", MX, 6.52, 12.1, 0.4, { face: H, size: 13.5, bold: true, color: C.accent });
+    s.addNotes(
+      "MESSAGE · Foundry : régler sans coder, sur ses modèles. NeMo : coder ses règles, pour tous les modèles. On empile.\n• 30 secondes : lire la dernière ligne. Les cellules colorées sont les limites.\n• Foundry : 4 niveaux (Off à High, Medium par défaut), annoter ou bloquer ; assouplir en sortie demande l'accord de Microsoft.\n• Extension Foundry : listes de blocage (terme exact ou regex, 10 000 termes, modèles Azure OpenAI) ; pas de logique métier.\n• NeMo : une règle métier = un flow Colang et une action Python, testés comme du code ; à héberger.\n→ « Le socle, c'est la passerelle plus NeMo. Je vous le montre. »"
     );
   }
 
@@ -1169,13 +1284,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     card(s, MX, 6.05, 12.13, 0.75, { fill: C.surf, line: C.yellow });
     txt(s, "Adaptateur arrêté : la passerelle refuse tout. Pas de garde-fou, pas de trafic LLM.", MX + 0.3, 6.05, 11.5, 0.75, { size: 14, color: C.white, valign: "middle" });
     s.addNotes(
-      "./demos/C-nemo-guardrails/run.ps1 (prepare.ps1 la veille : image de l'adaptateur dans le registre). " +
-      "1 · Le socle : rails/default/config.yml (regex secrets et données personnelles, YARA injections en sortie), politique webhook FailClosed, délai 3 s ; profil strict pour les routes grand public. " +
-      "2 · Avant : la clé et le NIR atteignent le modèle ; seule la carte est arrêtée par la couche native. " +
-      "3 · kubectl apply de guardrails/deploy rendu pour le cluster. 4 · Après : 403 sur les mêmes prompts, un prompt normal passe. " +
-      "5 · Journaux et métriques de l'adaptateur. 6 (option -AvecPanne) : adaptateur à zéro réplica, tout est refusé. " +
-      "Les prompts de la démo font partie des tests de l'adaptateur : la démo ne peut pas dériver des règles. Bibliothèque Apache-2.0 ; le microservice NVIDIA demande NVIDIA AI Enterprise. " +
-      "Secours : vidéo démo C. Après : reset.ps1."
+      "DÉMO C · EN DIRECT · ./demos/C-nemo-guardrails/run.ps1 (prepare.ps1 la veille)\n1 · Le socle : profil default, webhook FailClosed, délai 3 s.\n2 · Avant : la clé d'API et le numéro de sécurité sociale atteignent le modèle ; la carte est arrêtée par la regex native.\n3 · kubectl apply de guardrails/deploy.\n4 · Après : 403 sur les mêmes prompts ; un prompt normal passe, moins de 10 ms de garde-fous.\n5 · Journaux et métriques de l'adaptateur.\n6 · Option -AvecPanne : adaptateur arrêté, tout est refusé.\n• Les prompts de la démo sont dans les tests : la démo ne peut pas dériver des règles.\n• Secours : vidéo C. Après : reset.ps1.\n→ Ce que je referais."
     );
   }
 
@@ -1190,7 +1299,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       ["Sans secret de bout en bout", "Workload Identity pour Foundry et les outils Azure ; OIDC pour la CI."],
       ["Les règles à la passerelle, les filtres natifs en plus", "Une règle, tous les modèles ; Foundry en deuxième ligne."],
       ["Tout outil d'entreprise derrière la passerelle", "Sinon il échappe aux garde-fous, au comptage et à l'audit."],
-      ["Attribuer par équipe d'abord", "Le détail par personne là où la cardinalité ne coûte rien."],
+      ["Imputer les coûts à l'équipe d'abord", "Un libellé par personne multiplie les séries Prometheus : la personne va dans les journaux."],
       ["Le catalogue avant le self-service", "Ce qui n'est pas publié et versionné ne se déploie pas."],
       ["Épingler chaque version", "API en alpha partout : charts, images, et CRD relus à chaque montée."],
     ];
@@ -1201,7 +1310,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, b[0], x + 0.65, y, 5.3, 0.4, { face: H, size: 14.5, bold: true, color: C.white });
       txt(s, b[1], x + 0.65, y + 0.4, 5.3, 0.55, { size: 12, color: C.muted });
     });
-    s.addNotes("Une minute. Ne pas tout lire : citer 1, 5 et 7, ce sont les trois qui auraient évité les douleurs du slide identité.");
+    s.addNotes(
+      "MESSAGE · Huit règles, trois à retenir.\n• Ne pas tout lire : citer 1, 5 et 7 — elles auraient évité les douleurs de l'identité et du self-service.\n→ « Et combien ça coûte ? »"
+    );
   }
 
   // ----------------------------------------------------------------- 37. Coût (slide 38)
@@ -1236,12 +1347,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     txt(s, "La passerelle est l'assurance la moins chère du projet.", 8.5, 5.6, 4.25, 0.6, { face: H, size: 15, bold: true, color: C.white, lsm: 1.05 });
     txt(s, "Prix publics Azure (API Retail Prices), Sweden Central, USD, relevés en octobre 2026, Linux, 730 h/mois. Hors disques, load balancer, IP, logs, sortie réseau et inférence.", MX, 6.35, 7.7, 0.5, { size: 10, color: C.dim });
     s.addNotes(
-      "Le retour du cold open, chiffré. Calcul : D4as_v5 0,184 $/h, D8as_v5 0,368 $/h, AKS Standard 0,10 $/h, 730 h par mois (API Azure Retail Prices, Sweden Central, Linux). " +
-      "PoC : 2 × D4as_v5 en tier Free = 269 $/mois ; on le détruit après chaque session. " +
-      "Prod 3 nœuds : 3 × D8as_v5 (un par zone de disponibilité) + plan de contrôle Standard = 879 $/mois, 391 $ en réservation 3 ans. " +
-      "Prod 6 nœuds : 6 × D8as_v5 + Standard = 1 685 $/mois, 710 $ réservé 3 ans. Réservation 1 an : −38 % environ. " +
-      "Ordre de grandeur, pas un devis : ajouter disques OS managés (les Dasv5 n'ont pas de disque local), Log Analytics — souvent le poste surprise — et la sortie réseau. " +
-      "60 000 € ≈ 69 000 $ : 41 mois du cluster 6 nœuds au prix public."
+      "MESSAGE · Le socle coûte peu ; ce qui coûte, c'est l'inférence sans limite.\n• PoC : 269 $/mois, détruit après chaque session · prod 3 nœuds : 879 $ (391 $ réservé 3 ans) · prod 6 nœuds : 1 685 $ (710 $).\n• 60 000 € ≈ 69 000 $ ≈ 41 mois du cluster 6 nœuds au prix public.\n• Ordre de grandeur : hors disques, Log Analytics (souvent la surprise) et sortie réseau. Prix Azure Retail, Sweden Central, octobre 2026.\n→ Trois choses à emporter."
     );
   }
 
@@ -1261,7 +1367,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, it[0], MX + 1.1, y + 0.1, 11, 0.5, { face: H, size: 21, bold: true, color: C.white });
       txt(s, it[1], MX + 1.1, y + 0.62, 11, 0.6, { size: 15.5, color: C.muted });
     });
-    s.addNotes("Lire les trois titres, pas les sous-titres. Puis : « Merci. »");
+    s.addNotes(
+      "• Lire les trois titres, pas les sous-titres.\n→ « Merci. »"
+    );
   }
 
   // ----------------------------------------------------------------- 39. Merci
@@ -1270,14 +1378,19 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     txt(s, "Merci !", MX, 1.5, 8, 1.4, { face: H, size: 72, bold: true, color: C.white });
     txt(s, "Questions ?", MX, 2.95, 8, 0.8, { face: H, size: 32, color: C.accent });
     card(s, MX, 4.2, 7.6, 1.6, { line: C.border });
-    txt(s, "Le dépôt complet — Terraform, manifestes, démos, tableau de bord, schémas d'architecture — est publié.", MX + 0.3, 4.35, 7.0, 0.8, { size: 16, color: C.text, lsm: 1.1 });
+    txt(s, "Le dépôt complet — Terraform, manifestes, démos, tableau de bord, schémas d'architecture — est publié : scannez le QR code.", MX + 0.3, 4.35, 7.0, 0.8, { size: 16, color: C.text, lsm: 1.1 });
     txt(s, "smartcloudarchitect.fr  ·  blog.smartcloudarchitect.fr", MX + 0.3, 5.2, 7.0, 0.45, { size: 16, bold: true, color: C.accent });
     s.addImage({ path: LOGO_PATH, x: MX, y: 6.15, w: 0.6 * LOGO_RATIO, h: 0.6, altText: "Logo Smart Cloud Architect" });
     txt(s, "Antoine LOIZEAU · Smart Cloud Architect", MX + 0.6 * LOGO_RATIO + 0.2, 6.25, 8, 0.4, { size: 14, color: C.muted });
-    labels(s, [["governed", "true"], ["identity", "end-to-end"]], { x: 9.0, y: 2.4, size: 22 });
+    // QR code du dépôt : toujours sur fond blanc (contraste et zone de silence, même en thème sombre)
+    const qx = 9.45, qy = 0.85, qd = 3.0;
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: qx - 0.12, y: qy - 0.12, w: qd + 0.24, h: qd + 0.24, rectRadius: 0.12, fill: { color: "FFFFFF" }, line: { color: C.accent, width: 2 } });
+    s.addImage({ path: "assets/qr-depot.png", x: qx, y: qy, w: qd, h: qd, altText: "QR code : github.com/aloizeau/agentic-ai-azure-and-beyond-geneve-2026" });
+    txt(s, "Code source et démos", qx - 0.12, qy + qd + 0.25, qd + 0.24, 0.35, { face: H, size: 15, bold: true, color: C.white, align: "center" });
+    txt(s, "github.com/aloizeau/\nagentic-ai-azure-and-beyond-geneve-2026", qx - 0.4, qy + qd + 0.62, qd + 0.8, 0.6, { face: M, size: 10.5, color: C.accent, align: "center", lsm: 1.05 });
+    labels(s, [["governed", "true"], ["identity", "end-to-end"]], { x: qx - 0.12, y: 5.65, size: 15, gap: 0.15 });
     s.addNotes(
-      "Questions probables : APIM (annexe « deux couches »), Foundry Agent Service (slide 10), kagent 1.0 (slide 26), " +
-      "coûts (grille de prix, Data Zone), maturité alpha, identité du client (jamais)."
+      `MESSAGE · Laisser cette slide à l'écran pendant toutes les questions.\n• Le QR code mène au dépôt : github.com/aloizeau/agentic-ai-azure-and-beyond-geneve-2026. Vérifier la veille qu'il est public.\n• Questions probables : APIM (annexe « deux couches »), Foundry Agent Service (slide ${N.agentService}), kagent 1.0 (slide ${N.kagentV1}), coûts et Data Zone, maturité alpha.\n• Le client : ne jamais le nommer.`
     );
   }
 
@@ -1290,7 +1403,7 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     const r = [
       ["L'écosystème", "kagent (CNCF Sandbox), kmcp, agentregistry : des stacks IA standardisées, déployées comme n'importe quelle ressource Kubernetes."],
       ["Un standard, pas un produit", "Gateway API : la compétence et les manifestes suivent d'un cloud à l'autre."],
-      ["L'autorisation par outil", "CEL sur jwt.* et mcp.tool.name — les outils non autorisés disparaissent du tools/list."],
+      ["L'autorisation par outil", "CEL (Common Expression Language) sur jwt.* et mcp.tool.name — les outils non autorisés disparaissent du tools/list."],
       ["La fédération MCP", "Un seul endpoint pour Jira, Azure DevOps, SharePoint… au lieu d'une connexion par serveur."],
       ["Rust", "~22 Mo de mémoire par instance, contre plusieurs Go pour un proxy Python.*"],
     ];
@@ -1301,7 +1414,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, it[1], MX + 4.1, y + 0.02, 8.0, 0.66, { size: 14, color: C.muted, valign: "middle", lsm: 1.05 });
     });
     txt(s, "* Mesure publiée par Solo.io, sur un backend factice. À retenir : l'empreinte mémoire, pas le multiple de débit.", MX, 6.35, 12.1, 0.5, { size: 11, color: C.dim });
-    s.addNotes("Les raisons 1 et 5 sont celles de l'équipe à l'origine ; 2 à 4 sont venues en creusant.");
+    s.addNotes(
+      "• Raisons 1 et 5 : celles de l'équipe au départ. Raisons 2 à 4 : venues en creusant."
+    );
   }
 
   // ----------------------------------------------------------------- 41. Pièges
@@ -1325,7 +1440,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, p[i][0], x + 1.15, y + 0.2, w - 1.35, 0.45, { face: H, size: 15, bold: true, color: C.white });
       txt(s, p[i][1], x + 1.15, y + 0.68, w - 1.35, 0.5, { size: 13, color: C.muted });
     }
-    s.addNotes("Slide « photo ». Points vérifiés sur Microsoft Learn et la doc agentgateway ; revérifier la veille.");
+    s.addNotes(
+      "• Slide « photo ». Revérifier la veille sur Microsoft Learn et dans la doc agentgateway."
+    );
   }
 
   // ----------------------------------------------------------------- 42. Souveraineté
@@ -1349,7 +1466,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     txt(s, "DataZone borne le traitement à la zone UE. Le prix dépend du modèle et doit être vérifié dans Foundry.", 9.3, 3.45, 3.45, 1.1, { size: 13, color: C.muted, lsm: 1.1 });
     txt(s, "« Global types: May be processed in any Azure region. »", 9.3, 4.65, 3.45, 0.8, { size: 13, italic: true, color: C.text });
     txt(s, "Source : learn.microsoft.com — Foundry deployment types.", MX, 5.8, 12.1, 0.5, { size: 11, color: C.dim });
-    s.addNotes("À montrer si la question vient : le type de déploiement est une ligne du Terraform (sku_name).");
+    s.addNotes(
+      "• Si la question vient : le type de déploiement est une ligne du Terraform (sku_name)."
+    );
   }
 
   // ----------------------------------------------------------------- 43. Deux couches
@@ -1366,7 +1485,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     });
     txt(s, "APIM transforme un patrimoine d'API en outils d'agents. agentgateway gouverne ces outils à l'exécution, au plus près des agents, dans le cluster.", MX, 4.65, 12.1, 0.9, { size: 17, color: C.text, lsm: 1.1 });
     txt(s, "Architecture possible, pas celle du REX : à envisager si votre point de départ est un catalogue d'API.", MX, 5.75, 12.1, 0.4, { size: 13, italic: true, color: C.muted });
-    s.addNotes("On ne choisit pas un camp, on choisit une couche.");
+    s.addNotes(
+      "• On ne choisit pas un camp, on choisit une couche."
+    );
   }
 
   // ----------------------------------------------------------------- 45. KAITO (annexe)
@@ -1400,7 +1521,9 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
       txt(s, pts[i][1], 8.45, y + 0.12, 4.15, 0.4, { face: H, size: 15, bold: true, color: C.white });
       txt(s, pts[i][2], 8.45, y + 0.55, 4.15, 0.55, { size: 12.5, color: C.muted });
     }
-    s.addNotes("Réponse à « et sans fournisseur de modèles ? ». Script dans le dépôt (demos/chalet/E-auto-heberge/run.sh, deck Chalet) ; pas de démo ce soir.");
+    s.addNotes(
+      "• Réponse à « et sans fournisseur de modèles ? ». Script dans le dépôt (demos/chalet/E-auto-heberge), pas de démo ce soir."
+    );
   }
 
   // ----------------------------------------------------------------- 45. Le bilan
@@ -1418,9 +1541,11 @@ const TB = { border: { type: "solid", color: C.bg, pt: 2 } };
     await iconCircle(s, "FaTools", x2 + 0.3, 2.2, 0.65, C.yellow);
     txt(s, "Ce qui a fait mal", x2 + 1.1, 2.25, 4.5, 0.55, { face: H, size: 19, bold: true, color: C.white, valign: "middle" });
     bullets(s, ["Une documentation qui bouge plus vite que les projets", "Des API en alpha partout : épingler chaque version", "La propagation de l'identité Entra ID d'outil en outil", "L'imputation des coûts quand un agent agit pour quelqu'un"], x2 + 0.35, 3.15, colW - 0.7, 3.2, { size: 15, psa: 12 });
-    s.addNotes("À COMPLÉTER : une ou deux douleurs vécues chez le client (adoption, quotas, validation sécurité…).");
+    s.addNotes(
+      "• À compléter avant jeudi : une ou deux douleurs vécues chez le client (adoption, quotas, validation sécurité)."
+    );
   }
 
-  await pres.writeFile({ fileName: "rex-architectures-ia-entreprise.pptx" });
+  await pres.writeFile({ fileName: `rex-architectures-ia-entreprise${SUFFIX}.pptx` });
   console.log("écrit :", D.count(), "slides");
 })();

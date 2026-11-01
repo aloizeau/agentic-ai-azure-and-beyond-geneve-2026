@@ -9,30 +9,84 @@ const ReactDOMServer = require("react-dom/server");
 const sharp = require("sharp");
 const fa = require("react-icons/fa");
 
-// Relevée sur smartcloudarchitect.fr (thème sombre, base Tailwind)
-const C = {
-  bg: "030712",      // gray-950
-  surf: "111827",    // gray-900
-  surf2: "1F2937",   // gray-800
-  code: "0B1220",
-  border: "374151",  // gray-700
-  accent: "60A5FA",  // blue-400 — accent de marque
-  deep: "1D4ED8",    // blue-700
-  yellow: "FACC15",  // pièges, alertes
-  green: "4ADE80",   // validé, portable
-  red: "F87171",     // rejet, fuite
-  violet: "A78BFA",  // agents
-  white: "FFFFFF",
-  text: "E5E7EB",    // gray-200
-  muted: "9CA3AF",   // gray-400
-  dim: "6B7280",     // gray-500
+// Deux palettes, mêmes rôles : THEME=clair node build-rex.js produit la version claire.
+// Sombre : relevée sur smartcloudarchitect.fr (thème sombre, base Tailwind).
+// Clair : mêmes teintes, assombries pour rester lisibles sur fond blanc (slate / Tailwind 600–700).
+const PALETTES = {
+  sombre: {
+    bg: "030712",      // gray-950
+    surf: "111827",    // gray-900
+    surf2: "1F2937",   // gray-800
+    code: "0B1220",
+    border: "374151",  // gray-700
+    accent: "60A5FA",  // blue-400 — accent de marque
+    deep: "1D4ED8",    // blue-700
+    yellow: "FACC15",  // pièges, alertes
+    green: "4ADE80",   // validé, portable
+    red: "F87171",     // rejet, fuite
+    violet: "A78BFA",  // agents
+    violetDeep: "5B21B6",
+    white: "FFFFFF",   // texte fort (titres)
+    text: "F3F4F6",    // gray-100 — lisibilité en projection
+    muted: "CBD5E1",   // slate-300 (gray-400 s'effaçait au projecteur)
+    dim: "94A3B8",     // slate-400
+    onFill: "FFFFFF",  // texte sur aplat foncé (ronds numérotés)
+    onTag: "030712",   // texte sur étiquette pleine (LIVE, ALPHA…)
+    zone: "07101F",    // fond des zones de schéma
+    tintBlue: "0B1A33", tintGreen: "0B2A1F", tintRed: "2A0F14", tintViolet: "1B1236",
+  },
+  clair: {
+    bg: "FFFFFF",
+    surf: "F1F5F9",    // slate-100
+    surf2: "E2E8F0",   // slate-200
+    code: "F8FAFC",    // slate-50
+    border: "CBD5E1",  // slate-300
+    accent: "2563EB",  // blue-600
+    deep: "1D4ED8",    // blue-700
+    yellow: "0E7490",  // cyan-700 — pièges, alertes (l'ambre virait au marron sur fond blanc)
+    green: "15803D",   // green-700
+    red: "DC2626",     // red-600
+    violet: "7C3AED",  // violet-600
+    violetDeep: "6D28D9",
+    white: "0F172A",   // texte fort (titres) : slate-900
+    text: "0F172A",    // slate-900 — lisibilité en projection
+    muted: "334155",   // slate-700
+    dim: "475569",     // slate-600
+    onFill: "FFFFFF",
+    onTag: "FFFFFF",
+    zone: "F8FAFC",
+    tintBlue: "EFF6FF", tintGreen: "F0FDF4", tintRed: "FEF2F2", tintViolet: "F5F3FF",
+  },
 };
+const THEME = process.env.THEME === "clair" ? "clair" : "sombre";
+const C = PALETTES[THEME];
+const SUFFIX = THEME === "clair" ? "-clair" : "";
+
+// Lisibilité en projection : aucun texte courant sous ~11 pt, les titres ne bougent pas.
+function pt(n) {
+  if (n == null) return n;
+  if (n < 10) return n + 1.5;
+  if (n < 12) return n + 1;
+  if (n < 13.5) return n + 0.5;
+  return n;
+}
 const H = "Arial";        // titres
 const B = "Calibri";      // corps
 const M = "Courier New";  // code
 
 const W = 13.333, HGT = 7.5, MX = 0.6;
-const LOGO_PATH = "assets/logo.png";
+// Les sources (assets/) restent intactes ; le deck embarque des copies allégées
+// générées dans .build/ par prepareAssets() : le logo est répété sur chaque slide
+// (≈ 180 Ko × 46 sinon), et la photo en .jpeg évite le type « image/jpg » non
+// standard que pptxgenjs associe à l'extension .jpg.
+const fs = require("fs");
+const LOGO_PATH = ".build/logo.png";
+const PHOTO_PATH = ".build/antoine.jpeg";
+async function prepareAssets() {
+  fs.mkdirSync(".build", { recursive: true });
+  await sharp("assets/logo.png").resize(454).png({ palette: true, colors: 128, compressionLevel: 9 }).toFile(LOGO_PATH);
+  await sharp("assets/antoine.jpg").resize(600, 600).jpeg({ quality: 88 }).toFile(PHOTO_PATH);
+}
 const LOGO_RATIO = 908 / 603; // largeur / hauteur du logo recadré
 
 function createDeck({ title: deckTitle, footer: footerText, times = [] }) {
@@ -82,7 +136,7 @@ function createDeck({ title: deckTitle, footer: footerText, times = [] }) {
       shape: pres.shapes.ROUNDED_RECTANGLE, rectRadius: 0.08,
       x: MX, y: 0.45, w, h: 0.34,
       line: { color, width: 1.25 }, fill: { color: C.bg },
-      fontFace: H, fontSize: 10, bold: true, color, charSpacing: 2, align: "center", valign: "middle", margin: 0,
+      fontFace: H, fontSize: 11, bold: true, color, charSpacing: 2, align: "center", valign: "middle", margin: 0,
       isTextBox: true,
     });
   }
@@ -125,7 +179,7 @@ function createDeck({ title: deckTitle, footer: footerText, times = [] }) {
 
   function txt(s, text, x, y, w, h, o = {}) {
     s.addText(text, {
-      x, y, w, h, fontFace: o.face ?? B, fontSize: o.size ?? 14, color: o.color ?? C.text,
+      x, y, w, h, fontFace: o.face ?? B, fontSize: pt(o.size ?? 14), color: o.color ?? C.text,
       bold: o.bold ?? false, italic: o.italic ?? false, align: o.align ?? "left", valign: o.valign ?? "top",
       margin: o.margin ?? 0, paraSpaceAfter: o.psa ?? 0, lineSpacingMultiple: o.lsm ?? 1.0, isTextBox: true,
       charSpacing: o.cs,
@@ -139,7 +193,7 @@ function createDeck({ title: deckTitle, footer: footerText, times = [] }) {
         options: { bullet: { indent: 16 }, breakLine: i < items.length - 1 },
       })),
       {
-        x, y, w, h, fontFace: B, fontSize: o.size ?? 15, color: o.color ?? C.text, valign: "top",
+        x, y, w, h, fontFace: B, fontSize: pt(o.size ?? 15), color: o.color ?? C.text, valign: "top",
         paraSpaceAfter: o.psa ?? 8, margin: 0, isTextBox: true,
       }
     );
@@ -178,28 +232,37 @@ function createDeck({ title: deckTitle, footer: footerText, times = [] }) {
     });
     s.addText(runs, {
       x: x + 0.2, y: y + (label ? 0.42 : 0.18), w: w - 0.4, h: h - (label ? 0.55 : 0.3),
-      fontFace: M, fontSize: size, valign: "top", margin: 0, lineSpacingMultiple: 1.05, isTextBox: true,
+      fontFace: M, fontSize: Math.max(size, 9.5), valign: "top", margin: 0, lineSpacingMultiple: 1.05, isTextBox: true,
     });
     if (label) {
       txt(s, label, x + 0.2, y + 0.12, w - 0.4, 0.25, { face: M, size: 9, color: C.muted });
     }
   }
 
+  // Une ligne ne peut pas avoir de largeur ou de hauteur négative en OOXML
+  // (PowerPoint mobile refuse le fichier) : on normalise et on retourne la forme.
+  function norm(x, y, w, h) {
+    const o = { x, y, w, h };
+    if (w < 0) { o.x = x + w; o.w = -w; o.flipH = true; }
+    if (h < 0) { o.y = y + h; o.h = -h; o.flipV = true; }
+    return o;
+  }
+
   function arrow(s, x, y, w, h, color = C.muted, width = 1.75) {
     s.addShape(pres.shapes.LINE, {
-      x, y, w, h, line: { color, width, endArrowType: "triangle" },
+      ...norm(x, y, w, h), line: { color, width, endArrowType: "triangle" },
     });
   }
 
   function line(s, x, y, w, h, color = C.muted, width = 1.75, dash) {
-    s.addShape(pres.shapes.LINE, { x, y, w, h, line: { color, width, ...(dash ? { dashType: dash } : {}) } });
+    s.addShape(pres.shapes.LINE, { ...norm(x, y, w, h), line: { color, width, ...(dash ? { dashType: dash } : {}) } });
   }
 
   function tag(s, text, color, x = W - MX - 1.2, y = 0.45) {
     s.addText(text, {
       shape: pres.shapes.ROUNDED_RECTANGLE, rectRadius: 0.08, x, y, w: 1.2, h: 0.34,
       fill: { color }, line: { color, width: 0 },
-      fontFace: H, fontSize: 10, bold: true, color: C.bg, align: "center", valign: "middle", charSpacing: 2, margin: 0,
+      fontFace: H, fontSize: 11, bold: true, color: C.onTag, align: "center", valign: "middle", charSpacing: 2, margin: 0,
       isTextBox: true,
     });
   }
@@ -209,14 +272,14 @@ function createDeck({ title: deckTitle, footer: footerText, times = [] }) {
     s.addText(text, {
       shape: pres.shapes.ROUNDED_RECTANGLE, rectRadius: 0.06, x, y, w, h,
       line: { color, width: 1.25 }, fill: { color: C.bg },
-      fontFace: H, fontSize: 9.5, bold: true, color, align: "center", valign: "middle", charSpacing: 2, margin: 0, isTextBox: true,
+      fontFace: H, fontSize: 10.5, bold: true, color, align: "center", valign: "middle", charSpacing: 1.5, margin: 0, isTextBox: true,
     });
   }
 
   // Rond numéroté
   function num(s, n, x, y, d = 0.5, color = C.deep, size = 14) {
     s.addShape(pres.shapes.OVAL, { x, y, w: d, h: d, fill: { color }, line: { color, width: 0 } });
-    txt(s, String(n), x, y, d, d, { face: H, size, bold: true, color: C.white, align: "center", valign: "middle" });
+    txt(s, String(n), x, y, d, d, { face: H, size, bold: true, color: C.onFill, align: "center", valign: "middle" });
   }
 
   async function divider(n, heading, sub, notes, programme) {
@@ -237,4 +300,4 @@ function createDeck({ title: deckTitle, footer: footerText, times = [] }) {
   };
 }
 
-module.exports = { C, H, B, M, W, HGT, MX, LOGO_PATH, LOGO_RATIO, createDeck };
+module.exports = { C, H, B, M, W, HGT, MX, LOGO_PATH, LOGO_RATIO, PHOTO_PATH, prepareAssets, createDeck, THEME, SUFFIX, pt };

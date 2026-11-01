@@ -20,6 +20,7 @@ venv/
 # Node (slides)
 node_modules/
 slides/*.pptx
+slides/.build/
 
 # Secrets and local files
 *.pem
